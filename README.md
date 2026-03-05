@@ -1,0 +1,3 @@
+# ednabot
+
+XMPP Bot
