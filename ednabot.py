@@ -13,6 +13,7 @@ import config
 logging.basicConfig(level=config.LOG_LEVEL)
 log = logging.getLogger(__name__)
 
+
 # ===== Actual EdnaBot Class =====
 class EdnaBot(ClientXMPP):
     """ A XMPP bot with various functions """
@@ -36,19 +37,23 @@ class EdnaBot(ClientXMPP):
     # ===== Callback for startup =====
     async def session_start(self, event):
         """ Called when session starts
-            - Joins rooms
             - Sets initial presence/status
+            - get Roster
+            - Joins rooms
         """
-        self.status = self.make_presence(pshow=config.START_SHOW,
-                                         pstatus=config.START_STATUS,
-                                         ppriority=0)
-        self.status.send()
+        self.status = {}
+        self.status['show'] = config.START_SHOW
+        self.status['status'] = config.START_STATUS
+        self.status['priority'] = config.START_PRIORITY
+        self.send_presence(pshow=self.status['show'],
+                           pstatus=self.status['status'],
+                           ppriority=self.status['priority'])
         await self.get_roster()
 
         for room in config.ROOMS:
             self.plugin["xep_0045"].join_muc(room, config.NICK,
-                                             pstatus=config.START_STATUS,
-                                             pshow=config.START_SHOW)
+                                             pstatus=self.status['status'],
+                                             pshow=self.status['show'])
 
         # set automatic mutual subscriptions
         self.roster.auto_subscribe = True
@@ -115,18 +120,15 @@ class EdnaBot(ClientXMPP):
         self.send_ephemeral(mfrom, msg['type'], send_body)
 
     # ===== Set MUC status of bot =====
-    def set_muc_status(self, room=None, show=None, status=None, priority=None):
+    def set_muc_status(self, room=None):
         """ Sends a presence to a room """
 
         if room is None:
             return
         pres = self.make_presence(pto=f"{room}/{config.NICK}")
-        if show:
-            pres['show'] = show
-        if status:
-            pres['status'] = status
-        if priority:
-            pres['priority'] = priority
+        pres['show'] = self.status['show']
+        pres['status'] = self.status['status']
+        pres['priority'] = self.status['priority']
         pres.send()
 
     # ===== COMMANDS SECTION =====
@@ -173,9 +175,9 @@ class EdnaBot(ClientXMPP):
         """ Shows different help files for users and admins """
 
         if self.is_admin(msg['from'].bare):
-            send_body = f"✅ Help:\n{ADMIN_HELP}"
+            send_body = f"==ADMIN== Help:\n{ADMIN_HELP}"
         else:
-            send_body = f"✅ {nick + " " if nick != "" else ""}Help:"
+            send_body = f"{nick + " - " if nick != "" else "==USER== "}Help:"
             if mtype == "groupchat":
                 send_body += " Help only in direct chat. No spamming!"
             else:
@@ -198,17 +200,19 @@ class EdnaBot(ClientXMPP):
 
         if (self.is_admin(msg['from'].bare) and len(parts) >= 2
                 and parts[1] in ["chat", "online", "away", "xa", "dnd"]):
-            # build presence
+            # build and send bot presence
+            self.status['show'] = parts[1]
             if len(parts) >= 3:
-                status = " ".join(parts[2:])
+                self.status['status'] = " ".join(parts[2:])
             else:
-                status = ""
-            self.status = self.make_presence(pshow=parts[1], pstatus=status,
-                                             ppriority=0)
-            # set presence of bot and in all rooms
-            self.status.send()
+                self.status['status'] = ""
+            self.status['priority'] = 0
+            self.send_presence(pshow=self.status['show'],
+                               pstatus=self.status['status'],
+                               ppriority=self.status['priority'])
+            # set presence of bot in all rooms
             for room in config.ROOMS:
-                self.set_muc_status(room=room, show=parts[1], status=status)
+                self.set_muc_status(room=room)
             # show status
             self.show_status(msg)
         else:
