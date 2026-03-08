@@ -5,14 +5,14 @@ import logging
 LOG_LEVEL = logging.INFO                    # Logging verbosity
 
 # === Account data ===
-JID = "bot@domain.tld/envsbot"              # JID of the bot
-PASSWORD = "<password>"               # Password of the bot
-NICK = "envsbot"                            # Nick of the bot
+JID = "<botname>@domain.tld/bot"            # JID of the bot
+PASSWORD = "<password>"                     # Password of the bot
+NICK = "<botname>"                          # Nick of the bot
 
 # === Adminstration ===
-ADMINS = ["admin@domain.tld"]                   # Bot Administrators
+ADMINS = ["<admim>@domain.tld"]             # Bot Administrators
 # Rooms to join
-ROOMS = ["room@muc.domain.tld"]
+ROOMS = ["<room>@conference.envs.net", ...]
 
 # === Startup status ===
 START_SHOW = "online"                       # online|chat|away|xa|dnd
@@ -22,26 +22,50 @@ START_PRIORITY = 0                          # Startup priority
 # === sqlite database ===
 DB_FILE = "bot.db"                          # Bot sqlite DB
 
-# === Personal Data ===
-AVATAR = "envsbot.jpg"                      # Avatar file
-AVATAR_TYPE = "image/jpeg"                  # Avatar type
-VCARD_FN = "EnvsBot, der envs Service Bot"  # Bot Fullname
-VCARD_NICKNAME = "envsbot"                  # Bot Nickname
-VCARD_JABBERID = "bot@domain.tld"           # Bot Jid
-# URLs to bot Git repository and Homepage
-VCARD_URL = "https://git.envs.net/dan/envsbot"
-VCARD_EMAIL_USERID = "dan@envs.net"         # Author Email
-VCARD_BDAY = "2026-03-06"                   # Birthday of bot
-VCARD_GENDER = "it/its"                     # Bot gender
-# Bot description
-VCARD_DESC = """I'm a bot which will have a lot of tools which will be all
-documented inside the bot. I'm still in development, but my development
-progresses. I'm still in an early stage of development and a lot of
-functionality has still to be implemented.\n\n
-You can send a XMPP subscription request to the above JABBERID/XNPP address
-and I'll send a subscription request back, and if you accept it, I'll
-automatically be added to your roster."""
-# Organisation
-VCARD_ORG_ORGNAME = "Envs pubnix/tilde"
-VCARD_ORG_ORGUNIT = "XMPP server"
-VCARD_TITLE = "Automatic helper bot"
+# === Avatar Data ===
+AVATAR = "bot.jpg"                          # Avatar image file
+AVATAR_TYPE = "image/jpeg"                  # Avatar image type
+
+# === VCard ===
+VCARD_XML = """
+<vCard xmlns='vcard-temp'>
+    <FN>Name of the bot, a service bot</FN>
+    <NICKNAME>bluebot</NICKNAME>
+    <BDAY>2026-03-08</BDAY>
+    <ADR>
+        <STREET/>
+        <LOCALITY/>
+        <REGION/>
+        <PCODE/>
+        <CTRY/>
+    </ADR>
+    <EMAIL>
+        <AUTHOR/>
+        <PREF/>
+        <USERID><admin>@domain.tld</USERID>
+    </EMAIL>
+    <EMAIL>
+        <OTHER/>
+        <USERID><other>@domain.tld</USERID>
+    </EMAIL>
+    <JABBERID><botname>@domain.tld</JABBERID>
+    <ORG>
+        <ORGNAME>Organisation</ORGNAME>
+        <ORGUNIT>XMPP server</ORGUNIT>
+    </ORG>
+    <TITLE>Automatic helper bot</TITLE>
+    <URL>https://sub.domain.tld/</URL>
+    <URL>https://github.com/<handle>/botname</URL>
+    <TZ>Europe/Berlin</TZ>
+    <NOTE>
+I'm a bot which will have a lot of tools which will be all documented
+inside the bot. I'm still in development, but my development
+progresses. I'm still in an early stage of development and a lot
+of functionality has still to be implemented.
+
+You can send a XMPP subscription request to the above JABBERID/XNPP
+address and I'll send a subscription request back, and if you accept
+it, I'll automatically be added to your roster.
+    </NOTE>
+</vCard>
+"""
