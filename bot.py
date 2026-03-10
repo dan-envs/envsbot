@@ -3,8 +3,11 @@ import asyncio
 import json
 import inspect
 import os
+import sys
 import importlib
 import logging
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # === set up logging ===
 logging.basicConfig(level=logging.INFO)
@@ -96,37 +99,44 @@ class Bot(slixmpp.ClientXMPP):
     def load_plugins(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         plugin_dir = os.path.join(base_dir, "plugins")
+        sys.path.insert(0, base_dir)
 
         for filename in os.listdir(plugin_dir):
             if not filename.endswith(".py") or filename.startswith("_"):
                 continue
-
             module_name = filename[:-3]
+            module_path = f"plugins.{module_name}"
 
             try:
-                module = importlib.import_module(f"plugins.{module_name}")
-                log.info(f"Loaded plugin: {module_name}")
-                if hasattr(module, "register"):
-                    module.register(self)
+                module = importlib.import_module(module_path)
+                importlib.reload(module)
             except Exception:
-                log.exception(f"Failed to load plugin {module_name}")
-            # -------------------------------------------------
-            # decorator command auto-registration
-            # -------------------------------------------------
-            for attr in vars(module).values():
-                if not callable(attr):
-                    continue
-                if not hasattr(attr, "_command_names"):
-                    continue
-                for name in attr._command_names:
-                    # prevent duplicate command names
-                    if name in self.commands:
-                        raise ValueError(
-                            f"Duplicate command name '{name}' "
-                            f"in plugin '{module_name}'"
-                        )
+                log.exception(f"❌ Failed to load plugin {module_name}")
+                continue
 
-                    self.commands[name] = attr
+            log.info(f"✅ Loaded plugin: {module_name}")
+
+            # optional register hook
+            if hasattr(module, "register"):
+                try:
+                    module.register(self)
+                except Exception:
+                    log.exception(f"❌Plugin register() failed: {module_name}")
+
+            # command discovery
+            for attr in vars(module).values():
+                if callable(attr) and hasattr(attr, "_command_names"):
+                    for name in attr._command_names:
+                        if name in self.commands:
+                            log.warning(
+                                f"⚠️ Command '{name}' already registered "
+                                + "(plugin {module_name})"
+                            )
+                            continue
+                        self.commands[name] = attr
+                        log.info(
+                            f"- Registered command '{name}' from {module_name}"
+                        )
 
     async def start(self, event):
 
@@ -217,14 +227,13 @@ class Bot(slixmpp.ClientXMPP):
 
         command = self.commands[cmd]
 
-        if getattr(command, "owner_only", False) and not self.is_admin(sender_jid):
-
+        if (getattr(command, "owner_only", False)
+                and not self.is_admin(sender_jid)):
             self.send_message(
                 mto=msg["from"].bare if is_room else msg["from"],
                 mbody="❌You are not allowed to use this command.",
                 mtype="groupchat" if is_room else "chat"
             )
-
             return
 
         try:
