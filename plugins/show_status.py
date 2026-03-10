@@ -27,13 +27,3 @@ async def show_status(bot, sender_jid, nick, args, msg, is_room):
         mbody=f"Current status {emoji} ({show}) {message}",
         mtype=mtype
     )
-
-
-def register(bot):
-    """
-    Plugin registration hook.
-
-    Commands are registered automatically via the decorator
-    system in bot.py.
-    """
-    pass

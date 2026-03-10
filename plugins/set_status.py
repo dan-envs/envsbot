@@ -32,9 +32,7 @@ async def set_status(bot, sender_jid, nick, args, msg, is_room):
 
         bot.send_message(
             mto=target,
-            mbody="Usage: {prefix}setstatus <show> [message]".replace(
-                "{prefix}", bot.prefix
-            ),
+            mbody=f"Usage: {bot.prefix}setstatus <show> [message]",
             mtype=mtype
         )
         return
@@ -67,13 +65,3 @@ async def set_status(bot, sender_jid, nick, args, msg, is_room):
         mbody=response,
         mtype=mtype
     )
-
-
-def register(bot):
-    """
-    Plugin registration hook.
-
-    Commands are registered automatically via the decorator
-    system implemented in bot.py.
-    """
-    pass

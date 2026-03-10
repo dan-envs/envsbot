@@ -1,8 +1,6 @@
 import slixmpp
 import asyncio
 import json
-import os
-import importlib
 import inspect
 import logging
 
@@ -220,7 +218,7 @@ class Bot(slixmpp.ClientXMPP):
 
             self.send_message(
                 mto=msg["from"].bare if is_room else msg["from"],
-                mbody="You are not allowed to use this command.",
+                mbody="❌You are not allowed to use this command.",
                 mtype="groupchat" if is_room else "chat"
             )
 
