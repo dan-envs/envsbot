@@ -19,7 +19,7 @@ class PresenceManager:
 
         self.status = {
             "show": "online",
-            "status": "Online"
+            "status": "I'm ready to serve you!"
         }
 
         self.joined_rooms = set()
