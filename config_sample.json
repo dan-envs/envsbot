@@ -1,0 +1,8 @@
+{
+  "jid": "bluebot@domain.tld",
+  "password": "<password>",
+  "rooms": ["<room>@muc.domain.tld"],
+  "nick": "bluebot",
+  "admins": ["<admin>@domain.tld"],
+  "prefix": ","
+}
