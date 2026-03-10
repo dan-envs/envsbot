@@ -83,7 +83,8 @@ class Bot(slixmpp.ClientXMPP):
 
         self.rooms = self.config.get("rooms", [])
         self.nick = self.config.get("nick", "bot")
-        self.admins = set(self.config.get("admins", []))
+        self.admins = []
+        self.admins.append(self.config.get("owner", None))
         self.prefix = self.config.get("prefix", ",")
         self.commands = {}
 

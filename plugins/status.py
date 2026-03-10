@@ -60,7 +60,7 @@ async def status_set(bot, sender_jid, nick, args, msg, is_room):
 
         bot.send_message(
             mto=target,
-            mbody=f"Usage: {bot.prefix}setstatus <show> [message]",
+            mbody=f"Usage: {bot.prefix}status set <show> [message]",
             mtype=mtype
         )
         return

@@ -3,7 +3,7 @@
   "password": "<password>",
   "rooms": ["<room>@muc.domain.tld"],
   "nick": "bluebot",
-  "admins": ["<admin>@domain.tld"],
+  "owner": "<owner>@domain.tld",
   "prefix": ",",
   "avatar": "avatar.jpg",
   "avatar_type": "image/jpeg",
