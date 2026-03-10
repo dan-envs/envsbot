@@ -1,5 +1,6 @@
 venv/
 __pycache__/
+logs/
 tmp/
 config.json
 delete_vcard.py

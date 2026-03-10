@@ -4,16 +4,16 @@ import json
 import inspect
 import os
 import sys
-import importlib
 import logging
 import time
 
 from plugin_manager import PluginManager
+from logging_setup import setup_logging
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # === set up logging ===
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 log = logging.getLogger(__name__)
 
 
@@ -272,8 +272,6 @@ class Bot(slixmpp.ClientXMPP):
         if not parts:
             return
 
-        parts = body[len(self.prefix):].strip().split()
-
         command = None
         cmd = None
         args = []
@@ -320,7 +318,6 @@ class Bot(slixmpp.ClientXMPP):
 
 
 if __name__ == "__main__":
-
     xmpp = Bot("config.json")
 
     xmpp.register_plugin("xep_0030")
