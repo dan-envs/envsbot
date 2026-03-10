@@ -272,13 +272,23 @@ class Bot(slixmpp.ClientXMPP):
         if not parts:
             return
 
-        cmd = parts[0]
-        args = parts[1:]
+        parts = body[len(self.prefix):].strip().split()
 
-        if cmd not in self.commands:
+        command = None
+        cmd = None
+        args = []
+
+        # try longest command match
+        for i in range(len(parts), 0, -1):
+            candidate = " ".join(parts[:i])
+            if candidate in self.commands:
+                cmd = candidate
+                command = self.commands[candidate]
+                args = parts[i:]
+                break
+
+        if not command:
             return
-
-        command = self.commands[cmd]
 
         if (getattr(command, "owner_only", False)
                 and not self.is_admin(sender_jid)):
