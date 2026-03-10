@@ -2,6 +2,8 @@ import slixmpp
 import asyncio
 import json
 import inspect
+import os
+import importlib
 import logging
 
 # === set up logging ===
@@ -92,21 +94,22 @@ class Bot(slixmpp.ClientXMPP):
                                self.muc_nick_changed)
 
     def load_plugins(self):
-        import importlib
-        import os
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        plugin_dir = os.path.join(base_dir, "plugins")
 
-        plugin_dir = "plugins"
-
-        for file in os.listdir(plugin_dir):
-            if not file.endswith(".py") or file.startswith("_"):
+        for filename in os.listdir(plugin_dir):
+            if not filename.endswith(".py") or filename.startswith("_"):
                 continue
-            module_name = file[:-3]
-            module = importlib.import_module(f"{plugin_dir}.{module_name}")
 
-            # optional plugin initialization
-            if hasattr(module, "register"):
-                module.register(self)
+            module_name = filename[:-3]
 
+            try:
+                module = importlib.import_module(f"plugins.{module_name}")
+                log.info(f"Loaded plugin: {module_name}")
+                if hasattr(module, "register"):
+                    module.register(self)
+            except Exception:
+                log.exception(f"Failed to load plugin {module_name}")
             # -------------------------------------------------
             # decorator command auto-registration
             # -------------------------------------------------
@@ -224,10 +227,24 @@ class Bot(slixmpp.ClientXMPP):
 
             return
 
-        if inspect.iscoroutinefunction(command):
-            await command(self, sender_jid, nick, args, msg, is_room)
-        else:
-            command(self, sender_jid, nick, args, msg, is_room)
+        try:
+            if inspect.iscoroutinefunction(command):
+                await command(self, sender_jid, nick, args, msg, is_room)
+            else:
+                command(self, sender_jid, nick, args, msg, is_room)
+        except Exception as e:
+            log.exception(f"❌ Error while executing command '{cmd}'")
+            # send user-friendly error message
+            target = msg["from"].bare if is_room else msg["from"]
+            if self.is_admin(sender_jid):
+                err_msg = f"❌Command error: {e}"
+            else:
+                err_msg = f"❌Command '{cmd}' failed due to internal error."
+            self.send_message(
+                mto=target,
+                mbody=err_msg,
+                mtype="groupchat" if is_room else "chat"
+            )
 
 
 if __name__ == "__main__":
