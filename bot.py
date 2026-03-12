@@ -99,8 +99,6 @@ class Bot(slixmpp.ClientXMPP):
         self.add_event_handler("message", self.on_private_message)
         self.add_event_handler("muc::%s::got_online" % "*", self.on_muc_join)
         self.add_event_handler("muc::%s::got_offline" % "*", self.on_muc_leave)
-        self.add_event_handler("muc::%s::nick_changed" % "*",
-                               self.on_muc_nick_changed)
 
     async def autojoin_rooms(self):
         """
@@ -262,22 +260,6 @@ class Bot(slixmpp.ClientXMPP):
             if room in self.rooms:
                 self.rooms.remove(room)
             log.info("[MUC] 🚪 Left room %s (%s)", room, nick)
-
-    def on_muc_nick_changed(self, presence):
-
-        room = presence["from"].bare
-        new_nick = presence["muc"]["nick"]
-
-        if presence["muc"]["jid"] == self.boundjid.bare:
-            # update the bot's nick tracking
-            self.plugin["xep_0045"].our_nicks[room] = new_nick
-            # update PresenceManager
-            try:
-                self.presence.joined_rooms[room] = new_nick
-            except KeyError:
-                log.warning("⚠️Room not present in PresenceManager!")
-
-            log.info(f"✅ Room Nick changed: '{self.nick}' -> [{new_nick}]")
 
     async def on_muc_message(self, msg):
 
