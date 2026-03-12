@@ -1,0 +1,2 @@
+aiosqlite>=0.20
+slixmpp>=1.8

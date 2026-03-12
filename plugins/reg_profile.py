@@ -4,6 +4,11 @@ Bot profile initialization plugin.
 This plugin manages the public profile of the bot on the XMPP
 network during session startup.
 
+No Commands
+-----------
+This plugin has no commands, it is just run at startup and sets the
+vCard and the Avatar if they've changed.
+
 Responsibilities
 ----------------
 • Publish or update the bot vCard (XEP-0054)

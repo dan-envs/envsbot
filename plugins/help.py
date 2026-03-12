@@ -1,156 +1,137 @@
 """
-Help system plugin.
+Help plugin for the bot command system.
 
-Provides the `{prefix}help` command which lists available commands
-and displays detailed documentation for a specific command.
-
-The help system reads command docstrings dynamically and replaces
-the `{prefix}` placeholder with the currently configured command
-prefix before sending the output to the user.
-
-To reduce chatroom spam, help requests are only allowed in private
-messages to the bot.
+Provides an overview of loaded plugins and their commands. Users can
+request general help, plugin help, or command help. Command help must
+be requested using the configured command prefix so it is not confused
+with plugin names.
 """
 
-from command import command
+from command import command, resolve_command
 
 PLUGIN_META = {
     "name": "help",
     "version": "1.0",
-    "description": "Command help and documentation system"
+    "description": "Show help for plugins and commands.",
+    "category": "core",
 }
 
 
-@command("help", "h")
-async def help_command(bot, sender_jid, nick, args, msg, is_room):
-    """
-    Show available commands or detailed help for a specific command.
+def _first_line(text):
+    if not text:
+        return ""
+    return text.strip().split("\n")[0]
 
-    Command
-    -------
-    {prefix}help
-    {prefix}help <command>
 
-    Behavior
-    --------
-    Without arguments
-        Lists all available commands and their aliases.
-
-    With a command name
-        Displays the full documentation of the specified command.
-
-    Notes
-    -----
-    The requested command name must NOT include the command prefix.
-
-    Examples
-    --------
-    {prefix}help
-    {prefix}help status
-    {prefix}help plugins
-    """
-
-    target = msg["from"].bare if is_room else msg["from"]
-    mtype = "groupchat" if is_room else "chat"
-    #
-    # Block help in chatrooms
-    if mtype == "groupchat":
-        bot.send_message(
-            mto=target,
-            mbody="❌Help requests to the bot only in private chat,"
-            + "to prevent spam.",
-            mtype=mtype
-        )
-        return
-
-    prefix = bot.prefix
-    is_admin = bot.is_admin(sender_jid)
-
-    # -------------------------------------------------
-    # HELP FOR A SPECIFIC COMMAND
-    # -------------------------------------------------
-
-    if args:
-        # try longest command match
-        for i in range(len(args), 0, -1):
-            candidate = " ".join(args[:i])
-            if candidate in bot.commands:
-                name = candidate
-                args = args[i:]
-                break
-
-        if name not in bot.commands:
-            bot.send_message(
-                mto=target,
-                mbody=f"Unknown command: {name}",
-                mtype=mtype
-            )
-            return
-
-        func = bot.commands[name]
-
-        if getattr(func, "admins_only", False) and not is_admin:
-            bot.send_message(
-                mto=target,
-                mbody=f"Unknown command: {name}",
-                mtype=mtype
-            )
-            return
-
-        doc = func.__doc__ or "No help available."
-        doc = doc.strip().replace("{prefix}", prefix)
-
-        bot.send_message(
-            mto=target,
-            mbody=doc,
-            mtype=mtype
-        )
-
-        return
-
-    # -------------------------------------------------
-    # GENERAL HELP (LIST COMMANDS)
-    # -------------------------------------------------
-
-    grouped = {}
-
-    for name, func in bot.commands.items():
-
-        if getattr(func, "admins_only", False) and not is_admin:
-            continue
-
-        grouped.setdefault(func, func._command_names)
-
-    sorted_commands = sorted(
-        grouped.items(),
-        key=lambda item: item[0]._command_names[0]
-    )
+def _clean_doc(doc, prefix):
+    if not doc:
+        return ""
 
     lines = []
+    for line in doc.strip().splitlines():
+        line = line.replace("{prefix}", prefix)
+        lines.append(line.strip())
 
-    for func, names in sorted_commands:
+    return "\n".join(lines)
 
-        aliases = ", ".join(f"{prefix}{n}" for n in names)
 
-        doc = func.__doc__ or ""
-        first_line = doc.strip().split("\n")[0] if doc else ""
-        first_line = first_line.replace("{prefix}", prefix)
+def _commands_for_plugin(bot, plugin_name):
+    cmds = []
 
-        admin_marker = ""
-        if getattr(func, "admins_only", False):
-            admin_marker = " (✅ admin)"
+    for cmd, owner in bot.plugins.command_owner.items():
+        if owner == plugin_name:
+            fn = bot.commands.get(cmd)
+            if fn:
+                doc = _first_line(fn.__doc__)
+                cmds.append((cmd, doc))
 
-        if first_line:
-            line = f"{aliases} — {first_line}{admin_marker}"
+    return sorted(cmds)
+
+
+@command("help", aliases=["h"])
+async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Show help.
+
+    Usage:
+      {prefix}help
+      {prefix}help <plugin>
+      {prefix}help {prefix}<command>
+    """
+
+    prefix = bot.config.get("prefix", "!")
+    pm = bot.plugins
+    lines = []
+
+    # normalize args
+    if args is None:
+        args = []
+    elif isinstance(args, str):
+        args = args.split()
+
+    # --------------------------------------------------
+    # GENERAL HELP
+    # --------------------------------------------------
+
+    if not args:
+        lines.append("📦 Available plugins:")
+        lines.append("")
+
+        for name, module in sorted(pm.plugins.items()):
+            doc = _first_line(module.__doc__)
+            lines.append(f"• {name} — {doc}")
+
+        lines.append("")
+        lines.append(f"Use {prefix}help <plugin> for details.")
+        lines.append(f"Use {prefix}help {prefix}<command> for command help.")
+
+    else:
+        query = args[0]
+
+        # --------------------------------------------------
+        # COMMAND HELP (prefix required)
+        # --------------------------------------------------
+
+        if query.startswith(prefix):
+            # reconstruct full command string after prefix
+            text = " ".join(args)
+            text = text[len(prefix):].strip().lower()
+            cmd_obj, _ = resolve_command(text)
+            if cmd_obj:
+                fn = cmd_obj.handler
+                doc = _clean_doc(fn.__doc__, prefix)
+                lines.append(f"📖 Command: {prefix}{cmd_obj.name}")
+                lines.append("")
+                if doc:
+                    lines.append(doc)
+            else:
+                lines.append(f"⚠️ Unknown command: {query}")
+
+        # --------------------------------------------------
+        # PLUGIN HELP
+        # --------------------------------------------------
+
         else:
-            line = f"{aliases} - {admin_marker}"
+            query = query.lower()
 
-        lines.append(line)
+            if query in pm.plugins:
+                module = pm.plugins[query]
 
-    response = "Available commands:\n" + "\n".join(lines)
+                lines.append(f"📦 Plugin: {query}")
+                lines.append("")
 
-    bot.send_message(
-        mto=target,
-        mbody=response,
-        mtype=mtype
-    )
+                module_doc = _clean_doc(module.__doc__, prefix)
+                if module_doc:
+                    lines.append(module_doc)
+                    lines.append("")
+
+                cmds = _commands_for_plugin(bot, query)
+
+                if cmds:
+                    lines.append("Commands:")
+                    for name, doc in cmds:
+                        lines.append(f"  {prefix}{name} — {doc}")
+            else:
+                lines.append(f"⚠️ Unknown plugin: {query}")
+
+    bot.reply(msg, "\n".join(lines))

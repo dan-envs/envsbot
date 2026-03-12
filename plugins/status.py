@@ -1,55 +1,98 @@
 """
-Presence and status management plugin.
+Bot presence and status management.
 
-This plugin provides commands for displaying and modifying the
-bot's XMPP presence state. The bot presence is broadcast to
-contacts and chatrooms and can include both a presence type
-(e.g. away or do-not-disturb) and a human-readable status message.
-
-Admins can change the status dynamically without restarting
-the bot.
+This plugin allows moderators to change the bot's XMPP presence
+(online, away, do-not-disturb, etc.) and lets users view the
+current presence state and status message.
 """
 
 import logging
-from command import command
+from command import command, Role
 
-# Setup logging
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "status",
-    "version": "1.0",
-    "description": "Bot presence and status management"
+    "version": "1.1",
+    "description": "Bot presence and status management",
+    "category": "core",
 }
 
 
-@command("status set", admins_only=True)
+@command("status")
+async def show_status(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Display the current bot presence and status message.
+
+    Command
+    -------
+    {prefix}status
+
+    Description
+    -----------
+    Shows the bot's current presence state (online, away, etc.)
+    and the optional status message that is broadcast to contacts
+    and chatrooms.
+
+    Example
+    -------
+    {prefix}status
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    show = bot.presence.status["show"]
+    message = bot.presence.status["status"]
+
+    emoji = bot.presence.emoji(show)
+
+    if message:
+        text = f"Current status {emoji} ({show}) {message}"
+    else:
+        text = f"Current status {emoji} ({show})"
+
+    bot.send_message(
+        mto=target,
+        mbody=text,
+        mtype=mtype
+    )
+
+
+@command("status set", role=Role.MODERATOR)
 async def status_set(bot, sender_jid, nick, args, msg, is_room):
     """
-    Set the bot presence status.
+    Change the bot presence and optional status message.
 
     Command
     -------
     {prefix}status set <show> [message]
 
+    Description
+    -----------
+    Updates the presence state broadcast by the bot. Moderators
+    can use this command to indicate availability or activity.
+
+    Valid Presence States
+    ---------------------
+    online
+    -   Default available presence.
+    chat
+    -   Actively available for conversation.
+    away
+    -   Temporarily away from the keyboard.
+    xa
+    -   Extended away.
+    dnd
+    -   Do not disturb.
+
     Parameters
     ----------
     show
-        Presence type. Supported values:
-        - online
-            Available / default presence.
-        - chat
-            Actively available for conversation.
-        - away
-            Temporarily away.
-        - xa
-            Extended away.
-        - dnd
-            Do not disturb.
-    
+    -   The presence state to set.
     message (optional)
-        Status text displayed alongside the presence.
-    
+    -   Additional human-readable status text.
+
     Examples
     --------
     {prefix}status set away
@@ -61,7 +104,6 @@ async def status_set(bot, sender_jid, nick, args, msg, is_room):
     mtype = "groupchat" if is_room else "chat"
 
     if len(args) < 1:
-
         bot.send_message(
             mto=target,
             mbody=f"Usage: {bot.prefix}status set <show> [message]",
@@ -75,7 +117,6 @@ async def status_set(bot, sender_jid, nick, args, msg, is_room):
     valid_states = {"online", "chat", "away", "xa", "dnd"}
 
     if show not in valid_states:
-
         bot.send_message(
             mto=target,
             mbody="Invalid status. Valid values: online, chat, away, xa, dnd",
@@ -99,34 +140,3 @@ async def status_set(bot, sender_jid, nick, args, msg, is_room):
     )
 
     log.info(f"[STATUS] {response}")
-
-
-@command("status", "s")
-async def show_status(bot, sender_jid, nick, args, msg, is_room):
-    """
-    Show the current bot status and message.
-
-    Command
-    -------
-    {prefix}status
-
-    Displays the presence state and optional status message
-    currently broadcast by the bot.
-
-    Example
-    -------
-    {prefix}status
-    """
-    target = msg["from"].bare if is_room else msg["from"]
-    mtype = "groupchat" if is_room else "chat"
-
-    show = bot.presence.status["show"]
-    message = bot.presence.status["status"]
-
-    emoji = bot.presence.emoji(show)
-
-    bot.send_message(
-        mto=target,
-        mbody=f"Current status {emoji} ({show}) {message}",
-        mtype=mtype
-    )

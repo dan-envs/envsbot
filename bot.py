@@ -10,6 +10,7 @@ import time
 from plugin_manager import PluginManager
 from logging_setup import setup_logging
 from database import DatabaseManager
+from command import resolve_command, check_permission, Role
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -79,9 +80,8 @@ class Bot(slixmpp.ClientXMPP):
         self.admins = []
         owner = self.config.get("owner")
         if owner:
-            self.admins.append(owner)
+            self.admins.append(slixmpp.JID(owner).bare)
         self.prefix = self.config.get("prefix", ",")
-        self.commands = {}
 
         # Presence Manager
         self.presence = PresenceManager(self)
@@ -92,13 +92,36 @@ class Bot(slixmpp.ClientXMPP):
         # Plugin Manager
         self.commands = {}
         self.plugins = PluginManager(self)
-        self.load_plugins()
+        self.plugins.load_all()
 
         self.add_event_handler("session_start", self.on_start)
         self.add_event_handler("groupchat_message", self.on_muc_message)
         self.add_event_handler("message", self.on_private_message)
         self.add_event_handler("muc::%s::got_online" % "*", self.on_muc_join)
         self.add_event_handler("muc::%s::got_offline" % "*", self.on_muc_leave)
+
+    async def get_user_role(self, jid) -> Role:
+        """
+        Resolve a user's role using config and database.
+        """
+
+        jid = slixmpp.JID(jid).bare
+
+        owner_jid = slixmpp.JID(self.config["owner"]).bare
+
+        # owner override
+        if jid == owner_jid:
+            return Role.OWNER
+
+        role_name = await self.db.users.get_role(jid)
+
+        if not role_name:
+            return Role.NONE
+
+        try:
+            return Role[role_name.upper()]
+        except KeyError:
+            return Role.NONE
 
     async def autojoin_rooms(self):
         """
@@ -118,38 +141,6 @@ class Bot(slixmpp.ClientXMPP):
             if room_jid not in self.rooms:
                 self.rooms.append(room_jid)
             self.presence.joined_rooms[room_jid] = nick
-
-    def load_plugins(self):
-        """
-        Discover and load all plugins from the plugins directory.
-        """
-        log.info("✅ Loading plugins")
-        try:
-            # discover plugin names
-            plugin_list = self.plugins.discover()
-        except Exception as e:
-            log.error(f"[PLUGIN] Failed to discover plugins: {e}")
-            return
-
-        if not plugin_list:
-            log.info("[PLUGIN] No plugins found.")
-            return
-
-        log.info(f"[PLUGIN] Found {len(plugin_list)} plugin(s): "
-                 + f"{', '.join(plugin_list)}")
-
-        loaded = 0
-        failed = 0
-        for plugin_name in plugin_list:
-            try:
-                self.plugins.load(plugin_name)
-                log.info(f"[PLUGIN] Loaded: {plugin_name}")
-                loaded += 1
-            except Exception as e:
-                log.error(f"[PLUGIN] Failed to load {plugin_name}: {e}")
-                failed += 1
-
-        log.info(f"[PLUGIN] Load complete: {loaded} loaded, {failed} failed.")
 
     def reply(self, msg, text, mention=True, thread=True, rate_limit=True):
         """
@@ -289,54 +280,103 @@ class Bot(slixmpp.ClientXMPP):
             )
 
     async def handle_command(self, body, sender_jid, nick, msg, is_room):
+        """
+        Parse and execute a bot command from a message.
+
+        This method is called by both private-message and groupchat
+        handlers.  It checks whether the message begins with the
+        configured command prefix, resolves the command using the
+        command resolver, verifies user permissions, and executes
+        the command handler.
+
+        Workflow
+        --------
+        1. Validate that the message body exists and begins with the command
+           prefix.
+        2. Strip the prefix and resolve the command using `resolve_command()`.
+        3. Determine the sender's role (owner, admin, moderator, user, none).
+        4. Verify that the user has permission to execute the command.
+        5. Execute the command handler (async or sync).
+        6. Catch and report execution errors.
+
+        Parameters
+        ----------
+        body : str
+            Raw message body received from the XMPP message.
+        sender_jid : str
+            Bare JID of the message sender.
+        nick : str
+            Nickname of the sender in a groupchat. May be None for private
+            messages.
+        msg : slixmpp.Message
+            Original Slixmpp message object used for replies and metadata.
+        is_room : bool
+            True if the message was received in a MUC (groupchat), False if it
+            was a private chat message.
+
+        Notes
+        -----
+        - Commands are detected using the bot's configured prefix (e.g. ",").
+        - Command resolution supports:
+            * multi-word commands
+            * command aliases
+            * longest-match detection
+        - Permission checks are based on the role hierarchy:
+                OWNER (1)
+                ADMIN (2)
+                MODERATOR (3)
+                USER (4)
+                NONE (5)
+          Lower numbers have higher privileges.
+
+        - Errors are logged and a user-friendly message is returned to the
+          sender.
+        """
+
         if not body:
             return
         if not body.startswith(self.prefix):
             return
-
-        parts = body[len(self.prefix):].strip().split()
-
-        if not parts:
+        text = body[len(self.prefix):].strip()
+        if not text:
             return
 
-        command = None
-        cmd = None
-        args = []
+        # resolve command using command resolver
+        cmd_obj, args = resolve_command(text)
 
-        # try longest command match
-        for i in range(len(parts), 0, -1):
-            candidate = " ".join(parts[:i])
-            if candidate in self.commands:
-                cmd = candidate
-                command = self.commands[candidate]
-                args = parts[i:]
-                break
-
-        if not command:
+        if not cmd_obj:
             return
 
-        if (getattr(command, "admins_only", False)
-                and not self.is_admin(sender_jid)):
+        cmd_name = cmd_obj.name
+
+        # determine sender role
+        user_role = await self.get_user_role(sender_jid)
+
+        # permission check
+        if not check_permission(user_role, cmd_obj):
+            target = msg["from"].bare if is_room else msg["from"]
+
             self.send_message(
-                mto=msg["from"].bare if is_room else msg["from"],
+                mto=target,
                 mbody="❌You are not allowed to use this command.",
                 mtype="groupchat" if is_room else "chat"
             )
             return
 
         try:
-            if inspect.iscoroutinefunction(command):
-                await command(self, sender_jid, nick, args, msg, is_room)
+            handler = cmd_obj.handler
+            if inspect.iscoroutinefunction(handler):
+                await handler(self, sender_jid, nick, args, msg, is_room)
             else:
-                command(self, sender_jid, nick, args, msg, is_room)
+                handler(self, sender_jid, nick, args, msg, is_room)
         except Exception as e:
-            log.exception(f"❌ Error while executing command '{cmd}'")
-            # send user-friendly error message
+            log.exception(f"❌ Error while executing command '{cmd_name}'")
             target = msg["from"].bare if is_room else msg["from"]
-            if self.is_admin(sender_jid):
+            if user_role in (Role.OWNER, Role.ADMIN):
                 err_msg = f"❌Command error: {e}"
             else:
-                err_msg = f"❌Command '{cmd}' failed due to internal error."
+                err_msg = f"❌Command '{cmd_name}' failed due to internal error."
+
             self.send_message(
                 mto=target,
                 mbody=err_msg,
@@ -353,20 +393,22 @@ async def main():
     xmpp.register_plugin("xep_0163")
     xmpp.register_plugin("xep_0054")
 
+    # startup bot
+    await xmpp.connect()
+    log.info("[XMPP] ✅ Connected successfully. Starting event loop...")
+
     try:
-        # startup bot
-        await xmpp.connect()
-        log.info("[XMPP] ✅ Connected successfully. Starting event loop...")
-        # await disconnected
         await xmpp.disconnected
     except (KeyboardInterrupt, asyncio.CancelledError):
         # Gracefully shut down on CTRL-c
         log.info("[XMPP] Shutdown request")
-    finally:
-        log.info("[XMPP] Disconnecting bot")
-        if xmpp.db:
-            await xmpp.db.close()
+
         xmpp.disconnect()
+        await xmpp.disconnected
+    finally:
+        log.info("[XMPP] disconnected. Closing Database...")
+        await asyncio.shield(xmpp.db.close())
+        log.info("[XMPP] Database closed! End!")
 
 if __name__ == "__main__":
     try:

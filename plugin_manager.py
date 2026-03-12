@@ -1,115 +1,206 @@
+"""
+plugin_manager.py
+
+Runtime plugin manager for the bot.
+
+Handles plugin discovery, loading, unloading, reloading and
+command registration.
+"""
+
 import importlib
-import inspect
+import pkgutil
 import sys
-import os
+import inspect
 import logging
 
 log = logging.getLogger(__name__)
 
 
 class PluginManager:
+    """Runtime plugin manager."""
 
-    def __init__(self, bot, plugin_package="plugins"):
+    def __init__(self, bot, package="plugins"):
         self.bot = bot
-        self.plugin_package = plugin_package
+        self.package = package
+
+        # plugin_name -> module
         self.plugins = {}
-        self.command_map = {}
 
-    # -------------------------
-    # DISCOVER
-    # -------------------------
+        # command -> plugin_name
+        self.command_owner = {}
+
+        # plugin_name -> metadata
+        self.meta = {}
+
+    # --------------------------------------------------
+    # DISCOVERY
+    # --------------------------------------------------
+
     def discover(self):
-        plugin_dir = self.plugin_package.replace(".", "/")
-        plugins = []
-        for file in os.listdir(plugin_dir):
-            if file.endswith(".py") and not file.startswith("_"):
-                plugins.append(file[:-3])
-        return plugins
+        """Return all available plugin names."""
 
-    # -------------------------
+        package = importlib.import_module(self.package)
+
+        plugins = []
+
+        for module in pkgutil.iter_modules(package.__path__):
+            if not module.name.startswith("_"):
+                plugins.append(module.name)
+
+        return sorted(plugins)
+
+    # --------------------------------------------------
+    # LISTING
+    # --------------------------------------------------
+
+    def list(self):
+        """Return loaded plugin names."""
+
+        return sorted(self.plugins.keys())
+
+    def available(self):
+        """Return available but unloaded plugins."""
+
+        return sorted(set(self.discover()) - set(self.plugins))
+
+    # --------------------------------------------------
     # LOAD
-    # -------------------------
+    # --------------------------------------------------
+
     def load(self, name):
-        # Prevent of loading a plugin twice
+        """Load a plugin."""
+
         if name in self.plugins:
+            log.warning("[PLUGIN] ⚠️ Plugin already loaded: %s", name)
             return
 
-        # Load the plugin
-        module_path = f"{self.plugin_package}.{name}"
-        module = importlib.import_module(module_path)
-        self._register_plugin(name, module)
-        return module
+        log.info("[PLUGIN] 📦 Loading plugin: %s", name)
 
-    # -------------------------
-    # REGISTER
-    # -------------------------
-    def _register_plugin(self, name, module):
+        module_path = f"{self.package}.{name}"
+
+        module = importlib.import_module(module_path)
+
         meta = getattr(module, "PLUGIN_META", {})
-        requires = meta.get("requires", [])
-        for dep in requires:
+
+        # dependency resolution
+        for dep in meta.get("requires", []):
+
             if dep not in self.plugins:
+
+                log.info(
+                    "[PLUGIN] 🔗 Loading dependency '%s' for '%s'",
+                    dep,
+                    name,
+                )
+
                 self.load(dep)
-        commands = []
+
+        self._register_commands(name, module)
+
+        if hasattr(module, "setup"):
+            module.setup(self.bot)
+
+        self.plugins[name] = module
+        self.meta[name] = meta
+
+        log.info("[PLUGIN] ✅ Plugin loaded: %s", name)
+
+    # --------------------------------------------------
+    # COMMAND REGISTRATION
+    # --------------------------------------------------
+
+    def _register_commands(self, plugin_name, module):
 
         for _, obj in inspect.getmembers(module):
-            if hasattr(obj, "_command"):
-                for cmd_name in obj._command_names:
-                    self.bot.commands[cmd_name] = obj
-                    self.command_map[cmd_name] = name
-                commands.append(obj)
 
-        if hasattr(module, "register"):
-            module.register(self.bot)
+            if hasattr(obj, "_command_names"):
 
-        self.plugins[name] = {
-            "module": module,
-            "commands": commands,
-            "meta": meta
-        }
+                for name in obj._command_names:
 
-    # -------------------------
+                    if name in self.bot.commands:
+
+                        log.warning(
+                            "[PLUGIN] ⚠️ Command conflict: %s "
+                            "(plugin: %s)",
+                            name,
+                            plugin_name,
+                        )
+
+                    self.bot.commands[name] = obj
+                    self.command_owner[name] = plugin_name
+
+    # --------------------------------------------------
     # UNLOAD
-    # -------------------------
+    # --------------------------------------------------
+
     def unload(self, name):
+        """Unload a plugin."""
+
         if name not in self.plugins:
+
+            log.warning("[PLUGIN] ⚠️ Plugin not loaded: %s", name)
             return
 
-        module_path = f"{self.plugin_package}.{name}"
+        log.info("[PLUGIN] 📤 Unloading plugin: %s", name)
+
+        module = self.plugins[name]
+
+        if hasattr(module, "teardown"):
+            module.teardown(self.bot)
 
         # remove commands
         remove = []
 
-        for cmd, owner in self.command_map.items():
+        for cmd, owner in self.command_owner.items():
             if owner == name:
                 remove.append(cmd)
 
         for cmd in remove:
+
             del self.bot.commands[cmd]
-            del self.command_map[cmd]
+            del self.command_owner[cmd]
 
-        # unload hook
-        plugin = self.plugins[name]
-        module = plugin["module"]
+        # remove module
+        module_path = f"{self.package}.{name}"
 
-        if hasattr(module, "unregister"):
-            module.unregister(self.bot)
-
-        # remove module cache
         if module_path in sys.modules:
             del sys.modules[module_path]
 
         del self.plugins[name]
+        del self.meta[name]
 
-    # -------------------------
+        log.info("[PLUGIN] 📤 Plugin unloaded: %s", name)
+
+    # --------------------------------------------------
     # RELOAD
-    # -------------------------
-    def reload(self, name):
-        self.unload(name)
-        return self.load(name)
+    # --------------------------------------------------
 
-    # -------------------------
-    # LOAD ALL
-    # -------------------------
-    def load_all(self, plugin_list):
-        for name in plugin_list:
-            self.load(name)
+    def reload(self, name):
+        """Reload a plugin."""
+
+        log.info("[PLUGIN] 🔄 Reloading plugin: %s", name)
+
+        self.unload(name)
+
+        self.load(name)
+
+    # --------------------------------------------------
+    # BULK LOAD
+    # --------------------------------------------------
+
+    def load_all(self):
+        """Load all discovered plugins."""
+
+        for plugin in self.discover():
+
+            if plugin not in self.plugins:
+
+                try:
+                    self.load(plugin)
+
+                except Exception:
+
+                    log.exception(
+                        "[PLUGIN] ❌ Failed to load plugin: %s",
+                        plugin,
+                    )

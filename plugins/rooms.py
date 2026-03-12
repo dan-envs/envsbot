@@ -1,276 +1,519 @@
 """
-Rooms management plugin.
+Room management and persistence.
 
-This plugin allows administrators to manage XMPP rooms stored
-in the bot database and control room presence at runtime.
+This plugin provides administrative commands for managing XMPP
+multi-user chat rooms stored in the bot database. Administrators
+can add rooms, update their configuration, remove them, view the
+current list of rooms, and control whether the bot joins or leaves
+rooms at runtime.
+
+Rooms can optionally be configured with an *autojoin* flag so the
+bot automatically joins them when it starts.
 """
 
+import asyncio
 import logging
-from command import command
+from command import command, Role
 
 log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "rooms",
-    "version": "1.2",
-    "description": "Database room management"
+    "version": "2.3",
+    "description": "Database-backed room management",
+    "category": "rooms",
 }
 
 
-@command("rooms", admins_only=True)
-async def rooms_command(bot, sender_jid, nick, args, msg, is_room):
+# -------------------------------------------------
+# ROOM JID VALIDATION
+# -------------------------------------------------
+
+async def is_valid_muc_domain(bot, domain: str) -> bool:
     """
-    Manage XMPP rooms stored in the database.
+    Check if a domain provides a MUC service using XMPP service discovery.
+    """
 
-    Usage
-    -----
+    try:
+        info = await bot["xep_0030"].get_info(jid=domain)
+
+        for feature in info["disco_info"]["features"]:
+            if feature == "http://jabber.org/protocol/muc":
+                return True
+
+    except Exception as e:
+        log.warning("[ROOMS] ⚠️ MUC discovery failed for %s: %s", domain, e)
+
+    return False
+
+async def is_valid_room_jid(bot, jid: str, target, mtype) -> bool:
+    """
+    Validate that a string looks like a proper room JID.
+
+    Requirements
+    ------------
+    - must contain node@domain
+    - must not contain a resource part
+    """
+
+    if "/" in jid:
+        return False
+
+    if "@" not in jid:
+        return False
+
+    node, domain = jid.split("@", 1)
+
+    if not node or not domain:
+        return False
+
+    try:
+        async with asyncio.timeout(5):
+            is_valid = await is_valid_muc_domain(bot, domain)
+    except TimeoutError:
+        is_valid = False
+    if not is_valid:
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Domain '{domain}' does not provide muc service.",
+            mtype=mtype)
+        return False
+    return True
+
+
+# -------------------------------------------------
+# ROOMS ADD
+# -------------------------------------------------
+
+@command("rooms add", role=Role.ADMIN, aliases=["room add"])
+async def rooms_add(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Add a new room configuration to the database.
+
+    Command
+    -------
     {prefix}rooms add <room_jid> <nick> [autojoin]
-        Add a room to the database.
-    {prefix}rooms update <room_jid> <field> <value>
-        Update a room field.
-    {prefix}rooms delete <room_jid>
-        Remove a room from the database.
-    {prefix}rooms list
-        List all stored rooms.
-    {prefix}rooms join <room_jid> [nick]
-        Join a room immediately.
-    {prefix}rooms leave <room_jid>
-        Leave a room immediately.
 
-    Fields
-    ------
-    nick
-        Nickname used by the bot inside the room.
-    autojoin
-        Whether the bot automatically joins the room on startup.
-    status
-        Optional informational status text.
+    Description
+    -----------
+    Registers a room together with the nickname the bot should use
+    when joining it.
+
+    If the optional *autojoin* flag is enabled, the bot will join
+    the room automatically during startup.
 
     Examples
     --------
-    {prefix}rooms add room@conference.example.org BotNick true
-    {prefix}rooms update room@conference.example.org autojoin false
-    {prefix}rooms update room@conference.example.org nick ServiceBot
-    {prefix}rooms delete room@conference.example.org
-    {prefix}rooms join room@conference.example.org
-    {prefix}rooms leave room@conference.example.org
+    {prefix}rooms add dev@conference.example.org BotNick
+    {prefix}rooms add dev@conference.example.org BotNick true
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    if len(args) < 2:
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Usage: {bot.prefix}rooms add <room_jid> <nick> [autojoin]",
+            mtype=mtype
+        )
+        return
+
+    room_jid = args[0]
+    room_nick = args[1]
+
+    if not await is_valid_room_jid(bot, room_jid, target, mtype):
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Invalid room JID: {room_jid}",
+            mtype=mtype
+        )
+        log.warning(f"[ROOMS]⚠️ Room '{room_jid}' not valid!")
+        return
+
+    autojoin = len(args) >= 3 and args[2].lower() in ("true", "1", "yes")
+
+    await bot.db.rooms.add(room_jid, room_nick, autojoin)
+
+    log.info("[ROOMS] ➕ Added room %s nick=%s autojoin=%s",
+             room_jid, room_nick, autojoin)
+
+    bot.send_message(
+        mto=target,
+        mbody=f"✅ Room added: {room_jid}",
+        mtype=mtype
+    )
+
+
+# -------------------------------------------------
+# ROOMS UPDATE
+# -------------------------------------------------
+
+@command("rooms update", role=Role.ADMIN, aliases=["room update"])
+async def rooms_update(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Update a configuration field of a stored room.
+
+    Command
+    -------
+    {prefix}rooms update <room_jid> <field> <value>
+
+    Supported fields
+    ----------------
+    nick
+        Nickname the bot should use when joining the room.
+
+    autojoin
+        Controls whether the bot automatically joins the room
+        when it starts.
+
+        Allowed values:
+        true, false, yes, no, 1, 0
+
+    status
+        Optional descriptive text associated with the room.
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    if len(args) < 3:
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Usage: {bot.prefix}rooms update <room_jid> <field> <value>",
+            mtype=mtype
+        )
+        return
+
+    room_jid = args[0]
+
+    if not await is_valid_room_jid(bot, room_jid, target, mtype):
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Invalid room JID: {room_jid}",
+            mtype=mtype
+        )
+        log.warning(f"[ROOMS]⚠️Room '{room_jid}' not valid!")
+        return
+
+    field = args[1].lower()
+    value = args[2]
+
+    if field == "autojoin":
+        value = value.lower() in ("true", "1", "yes")
+
+    await bot.db.rooms.update(room_jid, **{field: value})
+
+    log.info("[ROOMS] 🔧 Updated %s: %s=%s", room_jid, field, value)
+
+    bot.send_message(
+        mto=target,
+        mbody=f"🔧 Room updated: {room_jid}",
+        mtype=mtype
+    )
+
+
+# -------------------------------------------------
+# ROOMS DELETE
+# -------------------------------------------------
+
+@command("rooms delete", role=Role.ADMIN, aliases=["room delete"])
+async def rooms_delete(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Remove a room configuration from the database.
+
+    Command
+    -------
+    {prefix}rooms delete <room_jid> [force]
+
+    Description
+    -----------
+    Deletes a stored room configuration.
+
+    If the bot is currently joined to that room it will leave it
+    automatically.
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    if len(args) < 1:
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Usage: {bot.prefix}rooms delete <room_jid>",
+            mtype=mtype
+        )
+        return
+
+    room_jid = args[0]
+
+    if not await is_valid_room_jid(bot, room_jid, target, mtype):
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Invalid room JID: {room_jid}",
+            mtype=mtype
+        )
+        log.warning(f"[ROOMS]⚠️Room '{room_jid}' not valid!")
+        return
+
+    await bot.db.rooms.delete(room_jid)
+
+    joined = room_jid in bot.rooms
+
+    if joined:
+
+        bot.plugin["xep_0045"].leave_muc(room_jid, bot.boundjid.user)
+
+        bot.rooms.remove(room_jid)
+
+        if room_jid in bot.presence.joined_rooms:
+            del bot.presence.joined_rooms[room_jid]
+
+        bot.presence.broadcast()
+
+        log.info("[ROOMS] 🚶 Left room %s", room_jid)
+
+    log.info("[ROOMS] 🗑️ Deleted room %s", room_jid)
+
+    bot.send_message(
+        mto=target,
+        mbody=f"🗑️ Room removed: {room_jid}",
+        mtype=mtype
+    )
+
+
+# -------------------------------------------------
+# ROOMS LIST
+# -------------------------------------------------
+
+@command("rooms list", role=Role.ADMIN, aliases=["room list"])
+async def rooms_list(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Show all rooms stored in the database.
+
+    Command
+    -------
     {prefix}rooms list
     """
 
     target = msg["from"].bare if is_room else msg["from"]
     mtype = "groupchat" if is_room else "chat"
 
-    if not args:
+    rows = await bot.db.rooms.list()
+
+    if not rows:
+        bot.send_message(mto=target, mbody="ℹ️ No rooms stored.", mtype=mtype)
+        return
+
+    header = f"{'ROOM':40} {'NICK':15} {'AUTOJOIN':8} {'JOINED'}"
+    lines = ["📋 Stored rooms", header, "-" * len(header)]
+
+    for room_jid, nick_name, autojoin, status in rows:
+
+        autojoin_flag = "yes" if autojoin else "no"
+        joined_flag = "yes" if room_jid in bot.rooms else "no"
+
+        lines.append(
+            f"{room_jid:40} {nick_name:15} {autojoin_flag:8} {joined_flag}"
+        )
+
+    bot.send_message(mto=target, mbody="\n".join(lines), mtype=mtype)
+
+
+# -------------------------------------------------
+# ROOMS JOIN
+# -------------------------------------------------
+
+@command("rooms join", role=Role.ADMIN, aliases=["room join"])
+async def rooms_join(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Join a room immediately.
+
+    Command
+    -------
+    {prefix}rooms join <room_jid> [nick]
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    if len(args) < 1:
         bot.send_message(
             mto=target,
-            mbody="⚠️ Usage: rooms <add|update|delete|list|join|leave>",
+            mbody=f"⚠️ Usage: {bot.prefix}rooms join <room_jid> [nick]",
             mtype=mtype
         )
         return
 
-    sub = args[0].lower()
+    room_jid = args[0]
 
-    log.info("[ROOMS] 📥 Command from %s: %s", sender_jid, args)
-
-    # --------------------------------------------------
-    # ADD
-    # --------------------------------------------------
-
-    if sub == "add":
-
-        if len(args) < 3:
-            bot.send_message(
-                mto=target,
-                mbody="⚠️ Usage: rooms add <room_jid> <nick> [autojoin]",
-                mtype=mtype
-            )
-            return
-
-        room_jid = args[1]
-        room_nick = args[2]
-        autojoin = False
-
-        if len(args) >= 4:
-            autojoin = args[3].lower() in ["1", "true", "yes"]
-
-        await bot.db.rooms.add(room_jid, room_nick, autojoin=autojoin)
-
-        log.info("[ROOMS] ➕ Added room %s nick=%s autojoin=%s",
-                 room_jid, room_nick, autojoin)
-
+    if not await is_valid_room_jid(bot, room_jid, target, mtype):
         bot.send_message(
             mto=target,
-            mbody=f"✅ Room added: {room_jid}",
+            mbody=f"⚠️ Invalid room JID: {room_jid}",
             mtype=mtype
         )
+        log.warning(f"[ROOMS]⚠️Room '{room_jid}' not valid!")
+        return
 
-    # --------------------------------------------------
-    # UPDATE
-    # --------------------------------------------------
-
-    elif sub == "update":
-
-        if len(args) < 4:
-            bot.send_message(
-                mto=target,
-                mbody="⚠️ Usage: rooms update <room_jid> <field> <value>",
-                mtype=mtype
-            )
-            return
-
-        room_jid = args[1]
-        field = args[2].lower()
-        value = args[3]
-
-        if field == "autojoin":
-            value = value.lower() in ["1", "true", "yes"]
-
-        await bot.db.rooms.update(room_jid, **{field: value})
-
-        log.info("[ROOMS] 🔧 Updated %s: %s=%s", room_jid, field, value)
-
-        bot.send_message(
-            mto=target,
-            mbody=f"🔧 Room updated: {room_jid}",
-            mtype=mtype
-        )
-
-    # --------------------------------------------------
-    # DELETE
-    # --------------------------------------------------
-
-    elif sub == "delete":
-
-        if len(args) < 2:
-            bot.send_message(
-                mto=target,
-                mbody="⚠️ Usage: rooms delete <room_jid>",
-                mtype=mtype
-            )
-            return
-
-        room_jid = args[1]
-
-        await bot.db.rooms.delete(room_jid)
-
-        log.info("[ROOMS] 🗑️ Deleted room %s", room_jid)
-
-        bot.send_message(
-            mto=target,
-            mbody=f"🗑️ Room removed: {room_jid}",
-            mtype=mtype
-        )
-
-    # --------------------------------------------------
-    # LIST
-    # --------------------------------------------------
-
-    elif sub == "list":
-
-        rows = await bot.db.rooms.list()
-
-        if not rows:
-
-            log.info("[ROOMS] 📭 Room list requested but database empty")
-
-            bot.send_message(
-                mto=target,
-                mbody="ℹ️ No rooms stored.",
-                mtype=mtype
-            )
-            return
-
-        lines = ["📋 Stored rooms:"]
-
-        for room_jid, room_nick, autojoin, status in rows:
-
-            autojoin_icon = "✅" if autojoin else "❌"
-
-            lines.append(
-                f"- {room_jid} | nick: {room_nick} | "
-                + f"autojoin: {autojoin_icon} | status: {status or '-'}"
-            )
-
-        log.info("[ROOMS] 📄 Listed %d rooms", len(rows))
-
-        bot.send_message(
-            mto=target,
-            mbody="\n".join(lines),
-            mtype=mtype
-        )
-
-    # --------------------------------------------------
-    # JOIN
-    # --------------------------------------------------
-
-    elif sub == "join":
-
-        if len(args) < 2:
-            bot.send_message(
-                mto=target,
-                mbody="⚠️ Usage: rooms join <room_jid> [nick]",
-                mtype=mtype
-            )
-            return
-
-        room_jid = args[1]
-
-        if len(args) >= 3:
-            room_nick = args[2]
-        else:
-            room = await bot.db.rooms.get(room_jid)
-            room_nick = room[1] if room else bot.boundjid.user
-
-        bot.plugin["xep_0045"].join_muc(room_jid, room_nick)
-
-        if room_jid not in bot.rooms:
-            bot.rooms.append(room_jid)
-        bot.presence.joined_rooms[room_jid] = room_nick
-        bot.presence.broadcast()
-
-        log.info("[ROOMS] 🚪 Joined room %s nick=%s", room_jid, room_nick)
-
-        bot.send_message(
-            mto=target,
-            mbody=f"🚪 Joined room: {room_jid}",
-            mtype=mtype
-        )
-
-    # --------------------------------------------------
-    # LEAVE
-    # --------------------------------------------------
-
-    elif sub == "leave":
-
-        if len(args) < 2:
-            bot.send_message(
-                mto=target,
-                mbody="⚠️ Usage: rooms leave <room_jid>",
-                mtype=mtype
-            )
-            return
-
-        room_jid = args[1]
-
-        bot.plugin["xep_0045"].leave_muc(room_jid, bot.boundjid.user)
-
-        if room_jid in bot.rooms:
-            bot.rooms.remove(room_jid)
-
-        log.info("[ROOMS] 🚶 Left room %s", room_jid)
-
-        bot.send_message(
-            mto=target,
-            mbody=f"🚶 Left room: {room_jid}",
-            mtype=mtype
-        )
-
+    if len(args) >= 2:
+        room_nick = args[1]
     else:
+        room = await bot.db.rooms.get(room_jid)
+        room_nick = room[1] if room else bot.boundjid.user
 
-        log.warning("[ROOMS] ❌ Unknown subcommand: %s", sub)
+    bot.plugin["xep_0045"].join_muc(room_jid, room_nick)
 
+    if room_jid not in bot.rooms:
+        bot.rooms.append(room_jid)
+
+    bot.presence.joined_rooms[room_jid] = room_nick
+    bot.presence.broadcast()
+
+    log.info("[ROOMS] 🚪 Joined room %s nick=%s", room_jid, room_nick)
+
+    bot.send_message(
+        mto=target,
+        mbody=f"🚪 Joined room: {room_jid}",
+        mtype=mtype
+    )
+
+
+# -------------------------------------------------
+# ROOMS LEAVE
+# -------------------------------------------------
+
+@command("rooms leave", role=Role.ADMIN, aliases=["room leave"])
+async def rooms_leave(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Leave a joined room.
+
+    Command
+    -------
+    {prefix}rooms leave <room_jid>
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    if len(args) < 1:
         bot.send_message(
             mto=target,
-            mbody="❌ Unknown subcommand.",
+            mbody=f"⚠️ Usage: {bot.prefix}rooms leave <room_jid>",
             mtype=mtype
         )
+        return
+
+    room_jid = args[0]
+
+    if not await is_valid_room_jid(bot, room_jid, target, mtype):
+        bot.send_message(
+            mto=target,
+            mbody=f"⚠️ Invalid room JID: {room_jid}",
+            mtype=mtype
+        )
+        log.warning(f"[ROOMS]⚠️Room '{room_jid}' not valid!")
+        return
+
+    bot.plugin["xep_0045"].leave_muc(room_jid, bot.boundjid.user)
+
+    if room_jid in bot.rooms:
+        bot.rooms.remove(room_jid)
+
+    if room_jid in bot.presence.joined_rooms:
+        del bot.presence.joined_rooms[room_jid]
+
+    bot.presence.broadcast()
+
+    log.info("[ROOMS] 🚶 Left room %s", room_jid)
+
+    bot.send_message(
+        mto=target,
+        mbody=f"🚶 Left room: {room_jid}",
+        mtype=mtype
+    )
+
+
+# -------------------------------------------------
+# ROOMS SYNC
+# -------------------------------------------------
+
+@command("rooms sync", role=Role.ADMIN, aliases=["room sync"])
+async def rooms_sync(bot, sender_jid, nick, args, msg, is_room):
+    """
+    Synchronize runtime rooms with database configuration.
+
+    Command
+    -------
+    {prefix}rooms sync
+
+    Description
+    -----------
+    Ensures that the bot's current room membership matches the
+    configuration stored in the database.
+
+    Actions performed
+    -----------------
+    • Leaves rooms joined by the bot but not stored in the database
+    • Joins rooms that are configured with autojoin=true
+    """
+
+    target = msg["from"].bare if is_room else msg["from"]
+    mtype = "groupchat" if is_room else "chat"
+
+    rows = await bot.db.rooms.list()
+    db_rooms = {r[0]: r for r in rows}
+
+    joined_rooms = set(bot.rooms)
+
+    left = []
+    joined = []
+
+    for room in joined_rooms:
+        if room not in db_rooms:
+
+            bot.plugin["xep_0045"].leave_muc(room, bot.boundjid.user)
+
+            bot.rooms.remove(room)
+
+            if room in bot.presence.joined_rooms:
+                del bot.presence.joined_rooms[room]
+
+            left.append(room)
+
+    for room_jid, nick_name, autojoin, status in rows:
+
+        if autojoin and room_jid not in bot.rooms:
+
+            bot.plugin["xep_0045"].join_muc(room_jid, nick_name,
+                                            pshow=bot.presence.status['show'],
+                                            pstatus=bot.presence.status['status'])
+
+            bot.rooms.append(room_jid)
+            bot.presence.joined_rooms[room_jid] = nick_name
+
+            joined.append(room_jid)
+
+    bot.presence.broadcast()
+
+    log.info("[ROOMS] 🔄 Synchronization complete joined=%d left=%d",
+             len(joined), len(left))
+
+    lines = ["🔄 Room synchronization complete"]
+
+    if joined:
+        lines.append("🚪 Joined:")
+        lines.extend(joined)
+
+    if left:
+        lines.append("🚶 Left:")
+        lines.extend(left)
+
+    if not joined and not left:
+        lines.append("ℹ️ No changes required.")
+
+    bot.send_message(
+        mto=target,
+        mbody="\n".join(lines),
+        mtype=mtype
+    )

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "BlueBot"
+version = "0.0.5"
+description = "Envs Pubnix/Tilde tools/games bot"
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "slixmpp>=1.8,<2",
+    "aiosqlite>=0.20,<1"
+]
+
+authors = [
+    { name = "~dan", email = "dan@envs.net" }
+]
+
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["plugins", "database"]
+
+[tool.setuptools.package-dir]
+"" = "."
