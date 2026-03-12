@@ -70,6 +70,15 @@ async def users_command(bot, sender_jid, nick, args, msg, is_room):
     {prefix}users update alice@example.org banned true
     {prefix}users delete alice@example.org
     {prefix}users list
+
+    Notes
+    -----
+    Roles:
+        1 = owner
+        2 = admin
+        3 = moderator
+        4 = user
+        5 = none
     """
 
     target = msg["from"].bare if is_room else msg["from"]

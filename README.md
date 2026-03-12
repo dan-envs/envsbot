@@ -8,8 +8,10 @@ XMPP Bot with some tools for day to day life in an XMPP chat room.
 * **,status**: Show bot status (presence)
 * **,status set &lt;show&gt; \[comment\]**: Set bot status (admin command)
 * **,plugins <list|load|reload|unload> \[args\]**: Manage Plugins
+* **,rooms <list|add|update|delete|join|leave> \[args\]**: Manage rooms
+* **,users <add|update|delete|list> \[args\]**: Manage users
 
 ## TODO
 - [ ] ',roster' command
 - [X] Setting avatar and vcard in separate module (reg_profile.py)
-- [ ] General database support sqlite3 for admins, rooms, etc.
+- [.] General database support sqlite3 for admins, rooms, etc.
