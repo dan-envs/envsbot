@@ -58,7 +58,7 @@ class PresenceManager:
             self.bot.send_presence(
                 pto=f"{room}/{nick}", pshow=show, pstatus=status)
         # log message
-        log.info(f"{self.emoji(show)} Status set: '{show}': [{status}]")
+        log.info(f"[PRESENCE] {self.emoji(show)} Status set: '{show}': [{status}]")
 
     def emoji(self, show=None):
 
@@ -97,7 +97,6 @@ class Bot(slixmpp.ClientXMPP):
         self.add_event_handler("session_start", self.on_start)
         self.add_event_handler("groupchat_message", self.on_muc_message)
         self.add_event_handler("message", self.on_private_message)
-        self.add_event_handler("muc::%s::got_online" % "*", self.on_muc_join)
         self.add_event_handler("muc::%s::got_offline" % "*", self.on_muc_leave)
 
     async def get_user_role(self, jid) -> Role:
@@ -132,7 +131,7 @@ class Bot(slixmpp.ClientXMPP):
         for room_jid, nick, autojoin, status in rows:
             if not autojoin:
                 continue
-            log.info("Autojoining room %s as %s", room_jid, nick)
+            log.info("[MUC] Autojoining room %s as %s", room_jid, nick)
             self.plugin["xep_0045"].join_muc(
                 room_jid,
                 nick,
@@ -243,17 +242,10 @@ class Bot(slixmpp.ClientXMPP):
         # set automatic mutual subscriptions
         self.roster.auto_subscribe = True
 
-        log.info("✅ Bot started, all rooms joined")
+        log.info("[BOT] ✅ Bot started, all rooms joined")
 
     def is_admin(self, jid):
         return slixmpp.JID(jid).bare in self.admins
-
-    def on_muc_join(self, presence):
-
-        room = presence["from"].bare
-        nick = presence["muc"]["nick"]
-
-        log.info("[MUC] 🤖 Joined room %s as %s", room, nick)
 
     def on_muc_leave(self, presence):
         """
@@ -379,34 +371,28 @@ class Bot(slixmpp.ClientXMPP):
 
         # permission check
         if not check_permission(user_role, cmd_obj):
-            target = msg["from"].bare if is_room else msg["from"]
-
-            self.send_message(
-                mto=target,
-                mbody="❌You are not allowed to use this command.",
-                mtype="groupchat" if is_room else "chat"
-            )
+            self.reply(msg, "❌You are not allowed to use this command.")
             return
 
         try:
-            handler = cmd_obj.handler
-            if inspect.iscoroutinefunction(handler):
-                await handler(self, sender_jid, nick, args, msg, is_room)
+            handler = getattr(cmd_obj, "handler", None)
+            if not handler:
+                log.error(f"[BOT]❌Command '{cmd_name}' has no handler")
+                return
+            result = handler(self, sender_jid, nick, args, msg, is_room)
+            if inspect.isawaitable(result):
+                await result
             else:
                 handler(self, sender_jid, nick, args, msg, is_room)
         except Exception as e:
-            log.exception(f"❌ Error while executing command '{cmd_name}'")
-            target = msg["from"].bare if is_room else msg["from"]
+            log.exception(f"[BOT]❌ Error while executing command '{cmd_name}'")
             if user_role in (Role.OWNER, Role.ADMIN):
                 err_msg = f"❌Command error: {e}"
             else:
-                err_msg = f"❌Command '{cmd_name}' failed due to internal error."
+                err_msg = f"❌Command '{cmd_name}'"
+                + " failed due to internal error."
 
-            self.send_message(
-                mto=target,
-                mbody=err_msg,
-                mtype="groupchat" if is_room else "chat"
-            )
+            self.reply(msg, err_msg)
 
 
 async def main():
