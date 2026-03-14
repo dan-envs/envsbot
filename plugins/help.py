@@ -73,7 +73,6 @@ def _extract_query(msg, prefix):
 
     return body
 
-
 @command("help", aliases=["h"])
 async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     """
@@ -88,6 +87,17 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     prefix = bot.config.get("prefix", ",")
     pm = bot.plugins
     lines = []
+
+    # --------------------------------------------------
+    # PREVENT HELP SPAM IN GROUPCHATS
+    # --------------------------------------------------
+
+    if is_room:
+        bot.reply(
+            msg,
+            "ℹ️ Help is only available via direct message."
+        )
+        return
 
     query = _extract_query(msg, prefix)
 
