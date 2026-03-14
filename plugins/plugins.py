@@ -10,7 +10,7 @@ Plugins are grouped by category based on PLUGIN_META metadata.
 
 import logging
 import importlib
-from command import command, Role
+from utils.command import command, Role
 
 log = logging.getLogger(__name__)
 

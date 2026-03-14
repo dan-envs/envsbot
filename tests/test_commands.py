@@ -1,4 +1,4 @@
-from command import resolve_command
+from utils.command import resolve_command
 
 
 def test_resolve_unknown_command():

@@ -1,4 +1,4 @@
-from command import check_permission, Role
+from utils.command import check_permission, Role
 
 
 class DummyCmd:

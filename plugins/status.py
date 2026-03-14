@@ -7,7 +7,7 @@ current presence state and status message.
 """
 
 import logging
-from command import command, Role
+from utils.command import command, Role
 
 log = logging.getLogger(__name__)
 

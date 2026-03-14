@@ -5,7 +5,7 @@ These tests verify that loading plugins multiple times does not
 duplicate command registrations or corrupt the command registry.
 """
 
-from plugin_manager import PluginManager
+from utils.plugin_manager import PluginManager
 
 
 def test_plugin_reload_does_not_duplicate_commands(bot):

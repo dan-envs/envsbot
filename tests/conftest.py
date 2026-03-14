@@ -1,3 +1,4 @@
+import importlib
 import sys
 import os
 
@@ -8,59 +9,44 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from tests.xmpp_fixtures import MockMessage
-from bot import Bot
-from command import Role
+from utils.command import Role
 
 
 @pytest.fixture
-def mock_config(tmp_path):
-    config = tmp_path / "config.json"
+def mock_config(monkeypatch):
+    test_config = {
+        "jid": "bot@test.local/testbot",
+        "password": "test",
+        "owner": "owner@test.local",
+        "prefix": ",",
+        "db": ":memory:"
+    }
+    # patch the config object used by the bot
+    monkeypatch.setattr("utils.config.config", test_config)
 
-    config.write_text("""
-{
-    "jid": "bot@test.local",
-    "password": "test",
-    "owner": "owner@test.local",
-    "prefix": ",",
-    "db": ":memory:"
-}
-""")
-
-    return str(config)
+    return test_config
 
 
 @pytest.fixture
 def bot(mock_config):
-    bot = Bot(mock_config)
 
-    # prevent real xmpp actions
+    if "bot" in sys.modules:
+        importlib.reload(sys.modules["bot"])
+
+    from bot import Bot
+
+    bot = Bot()
+
     bot.send_message = MagicMock()
     bot.make_message = MagicMock()
 
     bot.get_user_role = AsyncMock(return_value=Role.OWNER)
     bot.connect = AsyncMock()
 
-    # mock DB
     bot.db.connect = AsyncMock()
     bot.db.close = AsyncMock()
 
     return bot
-
-
-@pytest.fixture
-def fake_msg():
-    msg = {
-        "body": "",
-        "type": "chat",
-        "from": MagicMock(),
-        "thread": None,
-        "id": "123"
-    }
-
-    msg["from"].bare = "user@test.local"
-    msg["from"].resource = "resource"
-
-    return msg
 
 
 @pytest.fixture

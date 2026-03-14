@@ -2,8 +2,6 @@ import asyncio
 import logging
 import aiosqlite
 
-from asyncio import CancelledError
-
 from .users import UserManager
 from .rooms import Rooms
 

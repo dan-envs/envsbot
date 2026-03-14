@@ -1,18 +1,19 @@
 import slixmpp
 import asyncio
-import json
 import inspect
 import os
 import sys
 import logging
 import time
 
-from plugin_manager import PluginManager
-from logging_setup import setup_logging
+from utils.plugin_manager import PluginManager
+from utils.config import config, setup_logging
+from utils.command import resolve_command, check_permission, Role
 from database import DatabaseManager
-from command import resolve_command, check_permission, Role
 
+# === Add project main directory to path ===
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 # === set up logging ===
 setup_logging()
@@ -68,26 +69,24 @@ class PresenceManager:
 
 class Bot(slixmpp.ClientXMPP):
 
-    def __init__(self, config_file):
-        # load config file (json)
-        with open(config_file) as f:
-            self.config = json.load(f)
+    def __init__(self):
         # run __init__() from ClientXMPP
-        super().__init__(self.config["jid"], self.config["password"])
+        super().__init__(config["jid"],
+                         config["password"])
 
         self.rooms = []
-        self.nick = self.config.get("nick", "bot")
+        self.nick = config.get("nick", "bot")
         self.admins = []
-        owner = self.config.get("owner")
+        owner = config.get("owner")
         if owner:
             self.admins.append(slixmpp.JID(owner).bare)
-        self.prefix = self.config.get("prefix", ",")
+        self.prefix = config.get("prefix", ",")
 
         # Presence Manager
         self.presence = PresenceManager(self)
 
         # Database Manager
-        self.db = DatabaseManager(self.config.get("db", "bot.db"))
+        self.db = DatabaseManager(config.get("db", "bot.db"))
 
         # Plugin Manager
         self.commands = {}
@@ -106,7 +105,7 @@ class Bot(slixmpp.ClientXMPP):
 
         jid = slixmpp.JID(jid).bare
 
-        owner_jid = slixmpp.JID(self.config["owner"]).bare
+        owner_jid = slixmpp.JID(config["owner"]).bare
 
         # owner override
         if jid == owner_jid:
@@ -399,7 +398,7 @@ class Bot(slixmpp.ClientXMPP):
 
 
 async def main():
-    xmpp = Bot("config.json")
+    xmpp = Bot()
 
     xmpp.register_plugin("xep_0030")
     xmpp.register_plugin("xep_0045")
@@ -409,6 +408,7 @@ async def main():
 
     # startup bot
     await xmpp.connect()
+
     log.info("[XMPP] ✅ Connected successfully. Starting event loop...")
 
     try:

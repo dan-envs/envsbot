@@ -8,7 +8,7 @@ and reply helper work correctly.
 Category: test
 """
 
-from command import command, Role
+from utils.command import command, Role
 
 
 PLUGIN_META = {
@@ -32,7 +32,7 @@ async def ping(bot, sender, nick, args, msg, is_room):
 
     Usage
     -----
-    ,ping
+    {prefix}ping
     """
 
     bot.reply(msg, "pong")

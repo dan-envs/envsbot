@@ -59,7 +59,11 @@ packages = ["plugins", "database"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v" #"-ra --cov=. --cov-report=term-missing --cov-report=term"
+addopts = [
+    "-v",
+    "--cov-report=term",
+    "--cov=.",
+]
 
 [tool.coverage.run]
 branch = true

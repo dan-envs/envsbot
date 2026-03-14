@@ -29,6 +29,8 @@ import json
 import logging
 import os
 
+from utils.config import config
+
 PLUGIN_META = {
     "name": "profile",
     "version": "1.0",
@@ -174,7 +176,7 @@ async def update_vcard(bot):
 
     Process
     -------
-    1. Retrieve the vCard configuration from ``bot.config``.
+    1. Retrieve the vCard configuration from ``config``.
     2. Serialize the configuration and compute its SHA1 hash.
     3. Compare the hash with the previously stored hash.
     4. If unchanged, skip the update.
@@ -187,7 +189,7 @@ async def update_vcard(bot):
     configuration are written to the stanza.
     """
 
-    cfg = bot.config.get("vcard")
+    cfg = config.get("vcard")
 
     if not cfg:
         return
@@ -253,8 +255,8 @@ async def update_avatar(bot):
     automatically receive avatar updates.
     """
 
-    avatar_path = bot.config.get("avatar")
-    avatar_type = bot.config.get("avatar_type")
+    avatar_path = config.get("avatar")
+    avatar_type = config.get("avatar_type")
 
     if not avatar_path:
         return

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from command import Role
+from utils.command import Role
 
 
 @pytest.mark.asyncio

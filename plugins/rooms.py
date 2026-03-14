@@ -13,7 +13,7 @@ bot automatically joins them when it starts.
 
 import asyncio
 import logging
-from command import command, Role
+from utils.command import command, Role
 
 log = logging.getLogger(__name__)
 

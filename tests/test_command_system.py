@@ -5,7 +5,7 @@ These tests validate that plugin commands are correctly registered
 and follow the expected structure.
 """
 
-from command import Role
+from utils.command import Role
 
 
 def test_commands_registered(bot):

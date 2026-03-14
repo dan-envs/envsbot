@@ -32,7 +32,9 @@ Notes
 
 import logging
 
-from command import command, resolve_command, check_permission
+from utils.command import command, resolve_command, check_permission
+
+from utils.config import config
 
 log = logging.getLogger(__name__)
 
@@ -167,13 +169,13 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
       {prefix}help {prefix}<command>
     """
 
-    prefix = bot.config.get("prefix", ",")
+    prefix = config.get("prefix", ",")
 
     if is_room:
         bot.reply(msg, "ℹ️ Help is only available via private message.")
         return
 
-    query = _extract_query(msg, prefix)
+    query = " ".join(args).strip()
 
     user_role = await bot.get_user_role(sender_jid)
 
