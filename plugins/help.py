@@ -1,28 +1,57 @@
 """
-Help plugin.
+📚 Help system for the bot.
+
+This plugin provides dynamic help for:
+• Plugins
+• Commands
+• Multi-word commands
+
+Usage
+-----
+General help:
+  {prefix}help
 
 Plugin help:
-  ,help <plugin>
+  {prefix}help <plugin>
 
 Command help:
-  ,help ,command
+  {prefix}help {prefix}<command>
+
+Examples:
+  {prefix}help rooms
+  {prefix}help {prefix}join
+  {prefix}help {prefix}status set
+
+Notes
+-----
+• Help is only available via private chat to prevent spam.
+• Commands are filtered by user role.
+• Plugins always display their full docstring.
+• Command help displays the full command docstring.
 """
 
-from command import command, resolve_command
+import logging
 
+from command import command, resolve_command, check_permission
+
+log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "help",
-    "version": "1.1",
-    "description": "Show help for plugins and commands.",
+    "version": "2.0",
+    "description": "Dynamic help for plugins and commands.",
     "category": "core",
 }
 
 
+# --------------------------------------------------
+# DOCSTRING HELPERS
+# --------------------------------------------------
+
 def _first_line(doc):
     if not doc:
         return ""
-    return doc.strip().split("\n")[0]
+    return doc.strip().splitlines()[0]
 
 
 def _clean_doc(doc, prefix):
@@ -30,33 +59,23 @@ def _clean_doc(doc, prefix):
         return ""
 
     lines = []
+
     for line in doc.strip().splitlines():
-        line = line.replace("{prefix}", prefix)
-        lines.append(line.strip())
+        lines.append(line.replace("{prefix}", prefix).rstrip())
 
     return "\n".join(lines)
 
 
-def _commands_for_plugin(bot, plugin_name):
-    cmds = []
-
-    for cmd, owner in bot.plugins.command_owner.items():
-        if owner == plugin_name:
-            fn = bot.commands.get(cmd)
-            if not fn:
-                continue
-
-            doc = _first_line(fn.__doc__)
-            cmds.append((cmd, doc))
-
-    return sorted(cmds)
-
+# --------------------------------------------------
+# QUERY EXTRACTION
+# --------------------------------------------------
 
 def _extract_query(msg, prefix):
     """
-    Extract raw text after ',help' from the message.
+    Extract raw help query from message body.
 
-    This avoids command token normalization.
+    This avoids command token normalization so that
+    multi-word commands like "status set" work correctly.
     """
 
     body = msg["body"].strip()
@@ -69,9 +88,73 @@ def _extract_query(msg, prefix):
     if not body.lower().startswith("help"):
         return ""
 
-    body = body[4:].strip()
+    return body[4:].strip()
 
-    return body
+
+# --------------------------------------------------
+# COMMAND DISCOVERY
+# --------------------------------------------------
+
+def _commands_for_plugin(bot, plugin_name, user_role):
+    """
+    Dynamically collect commands belonging to a plugin.
+
+    This is hot-reload safe because it reads the live
+    command registry every time.
+    """
+
+    seen = set()
+    commands = []
+
+    for name, owner in bot.plugins.command_owner.items():
+
+        if owner != plugin_name:
+            continue
+
+        cmd_obj, _ = resolve_command(name)
+
+        if not cmd_obj:
+            continue
+
+        # avoid duplicates caused by aliases
+        if cmd_obj.name in seen:
+            continue
+
+        seen.add(cmd_obj.name)
+
+        if not check_permission(user_role, cmd_obj):
+            continue
+
+        commands.append(cmd_obj)
+
+    commands.sort(key=lambda c: c.name)
+
+    return commands
+
+
+# --------------------------------------------------
+# COMMAND FORMATTER
+# --------------------------------------------------
+
+def _format_command(cmd_obj, prefix):
+    """
+    Format command entry for plugin help.
+    """
+
+    name = cmd_obj.name
+    role = str(cmd_obj.role)
+    aliases = cmd_obj.aliases or []
+
+    desc = _first_line(cmd_obj.handler.__doc__)
+
+    alias_text = f" ({', '.join(aliases)})" if aliases else ""
+
+    return f"{prefix}{name}{alias_text} [{role}] - {desc}"
+
+
+# --------------------------------------------------
+# HELP COMMAND
+# --------------------------------------------------
 
 @command("help", aliases=["h"])
 async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
@@ -85,29 +168,24 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     """
 
     prefix = bot.config.get("prefix", ",")
-    pm = bot.plugins
-    lines = []
-
-    # --------------------------------------------------
-    # PREVENT HELP SPAM IN GROUPCHATS
-    # --------------------------------------------------
 
     if is_room:
-        bot.reply(
-            msg,
-            "ℹ️ Help is only available via direct message."
-        )
+        bot.reply(msg, "ℹ️ Help is only available via private message.")
         return
 
     query = _extract_query(msg, prefix)
+
+    user_role = await bot.get_user_role(sender_jid)
+
+    pm = bot.plugins
 
     # --------------------------------------------------
     # GENERAL HELP
     # --------------------------------------------------
 
     if not query:
-        lines.append("📦 Available plugins:")
-        lines.append("")
+
+        lines = ["📦 Available plugins", ""]
 
         for name, module in sorted(pm.plugins.items()):
             doc = _first_line(module.__doc__)
@@ -115,11 +193,9 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
 
         lines.append("")
         lines.append(f"Use {prefix}help <plugin> for plugin help.")
-        lines.append(
-            f"Use {prefix}help {prefix}<command> for command help."
-        )
+        lines.append(f"Use {prefix}help {prefix}<command> for command help.")
 
-        bot.reply(msg, "\n".join(lines))
+        bot.reply(msg, lines)
         return
 
     # --------------------------------------------------
@@ -127,24 +203,30 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     # --------------------------------------------------
 
     if query.startswith(prefix):
+
         cmd_text = query[len(prefix):].strip()
 
         cmd_obj, _ = resolve_command(cmd_text)
 
         if not cmd_obj:
-            bot.reply(msg, f"⚠️ Unknown command: {query}")
+            bot.reply(msg, "⚠️ Unknown command.")
             return
 
-        fn = cmd_obj.handler
-        doc = _clean_doc(fn.__doc__, prefix)
+        if not check_permission(user_role, cmd_obj):
+            bot.reply(msg, "⛔ You do not have permission to use this command.")
+            return
 
-        lines.append(f"📖 Command: {prefix}{cmd_obj.name}")
-        lines.append("")
+        doc = _clean_doc(cmd_obj.handler.__doc__, prefix)
+
+        lines = [
+            f"📖 Command: {prefix}{cmd_obj.name}",
+            ""
+        ]
 
         if doc:
             lines.append(doc)
 
-        bot.reply(msg, "\n".join(lines))
+        bot.reply(msg, lines)
         return
 
     # --------------------------------------------------
@@ -154,13 +236,15 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
     plugin = query.lower()
 
     if plugin not in pm.plugins:
-        bot.reply(msg, f"⚠️ Unknown plugin: {query}")
+        bot.reply(msg, "⚠️ Unknown plugin.")
         return
 
     module = pm.plugins[plugin]
 
-    lines.append(f"📦 Plugin: {plugin}")
-    lines.append("")
+    lines = [
+        f"📦 Plugin: {plugin}",
+        ""
+    ]
 
     module_doc = _clean_doc(module.__doc__, prefix)
 
@@ -168,11 +252,14 @@ async def cmd_help(bot, sender_jid, nick, args, msg, is_room):
         lines.append(module_doc)
         lines.append("")
 
-    cmds = _commands_for_plugin(bot, plugin)
+    lines.append("Commands:")
 
-    if cmds:
-        lines.append("Commands:")
-        for name, doc in cmds:
-            lines.append(f"  {prefix}{name} — {doc}")
+    commands = _commands_for_plugin(bot, plugin, user_role)
 
-    bot.reply(msg, "\n".join(lines))
+    if not commands:
+        lines.append("No commands available for your role.")
+    else:
+        for cmd in commands:
+            lines.append(_format_command(cmd, prefix))
+
+    bot.reply(msg, lines)
