@@ -22,7 +22,7 @@ async def test_groupchat_command_execution(bot, xmpp_msg):
     """
 
     xmpp_msg["type"] = "groupchat"
-    xmpp_msg["body"] = ",ping"
+    xmpp_msg["body"] = ",_ping"
 
     bot._reply_rate = {}
 
@@ -34,7 +34,7 @@ async def test_groupchat_command_execution(bot, xmpp_msg):
         True
     )
 
-    assert "pong" in xmpp_msg.replies
+    assert "test pong" in xmpp_msg.replies
 
 
 @pytest.mark.asyncio
@@ -43,7 +43,7 @@ async def test_bot_does_not_reply_to_itself(bot, xmpp_msg):
     Ensure the bot ignores its own messages.
     """
 
-    xmpp_msg["body"] = ",ping"
+    xmpp_msg["body"] = ",_ping"
     xmpp_msg["type"] = "groupchat"
     xmpp_msg["mucnick"] = xmpp_msg["from"].resource
 

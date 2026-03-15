@@ -20,12 +20,12 @@ PLUGIN_META = {
 
 
 @command(
-    name="ping",
-    role=Role.NONE,
+    name="_ping",
+    role=Role.OWNER,
 )
-async def ping(bot, sender, nick, args, msg, is_room):
+async def test_ping(bot, sender, nick, args, msg, is_room):
     """
-    Ping command.
+    Test Ping command.
 
     Responds with "pong". This command is primarily intended for
     automated testing and diagnostics.
@@ -35,4 +35,4 @@ async def ping(bot, sender, nick, args, msg, is_room):
     {prefix}ping
     """
 
-    bot.reply(msg, "pong")
+    bot.reply(msg, "test pong")

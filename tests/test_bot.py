@@ -14,9 +14,9 @@ from utils.command import Role, COMMAND_INDEX
 @pytest.mark.asyncio
 async def test_ping_command(bot, xmpp_msg):
 
-    bot.get_user_role = AsyncMock(return_value=Role.USER)
+    bot.get_user_role = AsyncMock(return_value=Role.OWNER)
 
-    xmpp_msg["body"] = ",ping"
+    xmpp_msg["body"] = ",_ping"
 
     replies = []
 
@@ -34,7 +34,7 @@ async def test_ping_command(bot, xmpp_msg):
     )
 
     assert replies
-    assert replies[0] == "pong"
+    assert replies[0] == "test pong"
 
 @pytest.mark.asyncio
 async def test_unknown_command(bot, xmpp_msg):
@@ -84,7 +84,7 @@ async def test_private_message_triggers_command(bot, xmpp_msg):
 
     bot.handle_command = AsyncMock()
 
-    xmpp_msg["body"] = ",ping"
+    xmpp_msg["body"] = ",_ping"
 
     await bot.on_private_message(xmpp_msg)
 
