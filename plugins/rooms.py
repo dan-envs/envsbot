@@ -198,19 +198,28 @@ async def rooms_update(bot, sender_jid, nick, args, msg, is_room):
 
     field = args[1].lower()
     value = args[2]
+    if field.lower in ["nick", "autojoin"]:
 
-    if field == "autojoin":
-        value = value.lower() in ("true", "1", "yes")
+        if field == "autojoin":
+            value = value.lower() in ("true", "1", "yes")
 
-    await bot.db.rooms.update(room_jid, **{field: value})
+        await bot.db.rooms.update(room_jid, **{field: value})
 
-    log.info("[ROOMS] 🔧 Updated %s: %s=%s", room_jid, field, value)
+        log.info("[ROOMS] 🔧 Updated %s: %s=%s", room_jid, field, value)
 
-    bot.send_message(
-        mto=target,
-        mbody=f"🔧 Room updated: {room_jid}",
-        mtype=mtype
-    )
+        bot.send_message(
+            mto=target,
+            mbody=f"🔧 Room updated: {room_jid}",
+            mtype=mtype
+        )
+    else:
+        log.info("[ROOMS] 🔧 Update failed! Invalid field '%s'", field)
+
+        bot.send_message(
+            mto=target,
+            mbody=f"🔧 Room not updated. Invalid field: '{field}'",
+            mtype=mtype
+        )
 
 
 # -------------------------------------------------
