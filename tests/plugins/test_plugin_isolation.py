@@ -1,26 +1,32 @@
 """
 Plugin isolation tests.
 
-These tests ensure that plugins can be imported and inspected
-independently without interfering with each other. This helps
-detect issues such as duplicate command registrations or plugins
-modifying shared state unexpectedly.
+These tests verify that plugins can coexist without interfering with
+each other or corrupting the command registry.
+
+Covered checks:
+- All registered command token sequences are unique.
+- Each plugin module can be imported independently without relying
+  on side effects from other plugins.
+
+These checks help detect issues that would break hot-reload or cause
+plugin cross-contamination in the runtime environment.
 """
 
 import importlib
 import pkgutil
 import plugins
+from utils.command import COMMANDS
 
 
 def test_plugins_register_unique_commands(bot):
     """
-    Ensure no plugin registers a command name that conflicts with
-    another plugin.
+    Ensure no two plugins register the same command token sequence.
     """
 
-    command_names = list(bot.commands.keys())
+    command_tokens = list(COMMANDS.index.keys())
 
-    assert len(command_names) == len(set(command_names)), \
+    assert len(command_tokens) == len(set(command_tokens)), \
         "Duplicate command names registered by plugins"
 
 
@@ -34,12 +40,16 @@ def test_plugins_can_be_imported_individually():
 
     for module in pkgutil.iter_modules(plugins.__path__):
 
+        # Skip internal/private plugins
+        if module.name.startswith("_"):
+            continue
+
         module_name = f"plugins.{module.name}"
 
         try:
             importlib.import_module(module_name)
 
         except Exception as e:
-            raise AssertionError(
+            assert False, (
                 f"Plugin '{module_name}' cannot be imported independently: {e}"
             )

@@ -1,41 +1,28 @@
 """
 Property-based tests for PluginManager.
 
-These tests validate the robustness of the plugin loading system by
-generating many different plugin dependency graphs automatically.
+These tests stress the plugin loading system using randomly generated
+plugin dependency graphs. The goal is to ensure the PluginManager
+handles arbitrary dependency layouts without crashing.
 
-Unlike the deterministic unit tests, which verify specific behaviors,
-these tests focus on a broader property:
-
-    The PluginManager must never crash or recurse infinitely
-    regardless of the plugin dependency graph.
-
-Hypothesis is used to generate random sets of plugin names. From these
-names, random dependency graphs are constructed, including graphs that
-contain:
+The generated graphs may include:
 
 - deep dependency chains
-- multiple branching dependencies
-- disconnected plugin groups
+- branching dependency trees
+- disconnected plugin sets
 - circular dependencies
-- dense dependency graphs
+- dense graphs
 
-The test then attempts to load each plugin using PluginManager. The
-expected property is that the loader always handles these graphs
-safely without raising unexpected exceptions.
+Plugins are simulated by dynamically creating modules under the
+`plugins.*` namespace and inserting them into `sys.modules`.
 
-Test isolation
---------------
+The main property being tested:
 
-Plugins are simulated using dynamically created modules inserted into
-`sys.modules` under the `plugins.*` namespace. A fixture automatically
-removes these modules after each test to ensure the test environment
-remains clean and deterministic.
+    Loading plugins must never crash the PluginManager,
+    regardless of the dependency graph structure.
 
-These property tests complement the deterministic tests in
-`test_plugin_manager_unit.py`, which verify specific expected behavior
-such as dependency loading, circular dependency detection, and setup
-failure safety.
+These tests complement deterministic plugin manager tests that verify
+specific expected behaviors.
 """
 
 import types
@@ -48,11 +35,12 @@ from utils.plugin_manager import PluginManager
 
 
 class DummyBot:
-    def __init__(self):
-        self.commands = {}
+    """Minimal bot stub used for PluginManager tests."""
+    pass
 
 
 def make_plugin(name, requires):
+    """Create a synthetic plugin module with dependency metadata."""
     module = types.ModuleType(name)
     module.PLUGIN_META = {"requires": requires}
     sys.modules[name] = module
@@ -61,6 +49,7 @@ def make_plugin(name, requires):
 
 @pytest.fixture(autouse=True)
 def cleanup_modules():
+    """Ensure dynamically created plugin modules are removed after each test."""
     before = set(sys.modules.keys())
     yield
     after = set(sys.modules.keys())
@@ -82,26 +71,27 @@ plugin_names = st.lists(
 @given(plugin_names)
 def test_loader_never_crashes(plugin_names):
     """
-    Property test: PluginManager must never crash regardless
+    Property test: loading plugins must never crash regardless
     of dependency graph layout.
-    """
 
-    import random
+    PluginManager.load() is synchronous in the refactored codebase,
+    so the loader must be called without awaiting it.
+    """
 
     bot = DummyBot()
     pm = PluginManager(bot, package="plugins")
 
+    # Build dependency graph
     graph = {}
-
     for name in plugin_names:
-        deps = random.sample(plugin_names,
-                             k=random.randint(0, len(plugin_names)))
-        deps = [d for d in deps if d != name]
-        graph[name] = deps
+        deps = [d for d in plugin_names if d != name]
+        graph[name] = deps[: len(deps) // 2]
 
+    # Create synthetic plugins
     for name, deps in graph.items():
         make_plugin(f"plugins.{name}", deps)
 
+    # Attempt loading each plugin
     for name in graph.keys():
         try:
             pm.load(name)

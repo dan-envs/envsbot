@@ -1,82 +1,114 @@
 """
-Reload integrity test for all plugins.
+Plugin reload integrity tests.
 
-This verifies that repeated reloads do not corrupt:
+This test verifies that repeatedly reloading plugins does not corrupt the
+global command registry.
 
-- command registry
-- command ownership
-- alias index
-- module replacement
+For every discovered plugin that defines commands, the test checks that:
+
+- command tokens remain identical across reloads
+- command ownership remains stable
+- command counts remain unchanged
+- handler functions are replaced on reload
+- plugin module objects change across reloads
+- old handler functions become garbage collectible
+
+The global COMMANDS registry is cleared before and after the test to ensure
+that other tests or bot initialization cannot contaminate the registry.
 """
 
+import gc
+import weakref
 import sys
 
-from utils.command import COMMAND_INDEX
+import pytest
 
+from utils.command import COMMANDS
 
 RELOAD_COUNT = 100
 
 
-def snapshot(bot, plugin):
+def snapshot(plugin):
+    """Capture registry state for a plugin."""
+    owners = COMMANDS.by_plugin.get(plugin, set())
 
-    pm = bot.plugins
-
-    commands = dict(bot.commands)
-    owners = dict(pm.command_owner)
-
-    index_keys = set(COMMAND_INDEX.keys())
+    handlers = {
+        name: COMMANDS.index[name].handler
+        for name in owners
+    }
 
     module = sys.modules.get(f"plugins.{plugin}")
 
-    plugin_handlers = {
-        commands[name]
-        for name, owner in owners.items()
-        if owner == plugin
-    }
-
     return {
-        "command_names": set(commands.keys()),
-        "owners": owners,
-        "index_keys": index_keys,
-        "plugin_handler_count": len(plugin_handlers),
+        "command_tokens": set(owners),
+        "command_count": len(owners),
+        "owners": {name: plugin for name in owners},
+        "plugin_handler_count": len(handlers),
+        "handler_ids": {name: id(h) for name, h in handlers.items()},
         "module": module,
     }
 
 
+@pytest.fixture(autouse=True)
+def _clean_command_registry():
+    """Ensure the global command registry is empty for the test."""
+    COMMANDS.index.clear()
+    COMMANDS.by_handler.clear()
+    COMMANDS.by_plugin.clear()
+    COMMANDS.by_prefix.clear()
+    yield
+    COMMANDS.index.clear()
+    COMMANDS.by_handler.clear()
+    COMMANDS.by_plugin.clear()
+    COMMANDS.by_prefix.clear()
+
+
 def test_plugin_reload_integrity_all(bot):
+    """Repeated plugin reloads must not corrupt the command registry."""
 
     pm = bot.plugins
-
-    # discover all available plugins
     plugins = sorted(pm.discover())
 
     for plugin in plugins:
 
+        try:
+            pm.unload(plugin)
+        except Exception:
+            pass
+
         pm.load(plugin)
 
-        before = snapshot(bot, plugin)
+        before = snapshot(plugin)
+
+        # Skip plugins without commands
+        if not before["command_tokens"]:
+            continue
+
+        # Capture weakrefs to initial handlers only
+        handler_refs = {
+            name: weakref.ref(COMMANDS.index[name].handler)
+            for name in before["command_tokens"]
+        }
 
         for _ in range(RELOAD_COUNT):
 
             pm.reload(plugin)
 
-            now = snapshot(bot, plugin)
+            now = snapshot(plugin)
 
-            # command names must remain identical
-            assert now["command_names"] == before["command_names"]
-
-            # command ownership must remain identical
+            assert now["command_tokens"] == before["command_tokens"]
+            assert now["command_count"] == before["command_count"]
             assert now["owners"] == before["owners"]
-
-            # alias index must remain identical
-            assert now["index_keys"] == before["index_keys"]
-
-            # handler count for the plugin must remain stable
             assert now["plugin_handler_count"] == before["plugin_handler_count"]
 
-            # module must actually be replaced
             assert now["module"] is not before["module"]
+            assert now["handler_ids"] != before["handler_ids"]
 
-            before = now
+        # Drop strong references from snapshot before GC check
+        del before
+        del now
 
-        pm.unload(plugin)
+        gc.collect()
+
+        for ref in handler_refs.values():
+            assert ref() is None

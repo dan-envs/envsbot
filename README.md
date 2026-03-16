@@ -16,21 +16,24 @@ multiuser environment community.
 
 **envsbot** is a modular, plugin-driven chat bot framework written in Python.
 
-The project focuses on simplicity, clean architecture, and runtime extensibility.
-Features are implemented as plugins which can be dynamically loaded, unloaded, or reloaded without restarting the bot.
+The project focuses on simplicity, clean architecture, and runtime extensibility.  
+Features are implemented as plugins which can be dynamically loaded, unloaded,
+or reloaded without restarting the bot.
 
-envsbot is designed to make it easy to extend functionality while keeping the core bot lightweight and maintainable.
+envsbot is designed to make it easy to extend functionality while keeping the
+core bot lightweight and maintainable.
 
 ---
 
 ## Features
 
 * Plugin-based architecture
-* Dynamic plugin loading / unloading
+* Dynamic plugin loading / unloading / reload
 * Command handling system
 * Plugin dependency support
 * Structured database layer
 * Clean and modular codebase
+* Extensive automated test suite
 
 ---
 
@@ -39,40 +42,52 @@ envsbot is designed to make it easy to extend functionality while keeping the co
 ~~~
 envsbot/
 │
-├─ bot.py                # Main bot runtime
+├─ bot.py                    # Main bot runtime
 │
-├─ utils/                # Core framework utilities
-│   ├─ command.py        # Command framework
-│   ├─ plugin_manager.py # Plugin loading and lifecycle management
-│   └─ config.py         # Configuration loader / helpers
+├─ utils/                    # Core framework utilities
+│   ├─ command.py            # Command registry and decorators
+│   ├─ plugin_manager.py     # Plugin loading and lifecycle management
+│   └─ config.py             # Configuration loader / helpers
 │
-├─ database/             # Database modules
-│   ├─ manager.py        # Database manager / connection handling
-│   ├─ rooms.py          # Room storage logic
-│   └─ users.py          # User storage logic
+├─ database/                 # Database modules
+│   ├─ manager.py            # Database manager / connection handling
+│   ├─ rooms.py              # Room storage logic
+│   └─ users.py              # User storage logic
 │
-├─ plugins/              # Bot plugins
+├─ plugins/                  # Bot plugins
 │   ├─ help.py
 │   ├─ plugins.py
 │   ├─ rooms.py
 │   ├─ status.py
-│   ├─ _reg_profile.py   # Internal plugin
-│   └─ _test.py          # Development / testing plugin
+│   ├─ _reg_profile.py       # Internal self registration/profile plugin (vCard)
+│   └─ _test.py              # Development / testing plugin
 │
-├─ tests/                # Automated test suite
-│   ├─ conftest.py
+├─ tests/                    # Automated test suite
+│   ├─ conftest.py           # Global pytest fixtures
 │   ├─ xmpp_fixtures.py
-│   ├─ test_bot.py
-│   ├─ test_commands.py
-│   ├─ test_command_system.py
-│   ├─ test_commands_crash.py
-│   ├─ test_permissions.py
-│   ├─ test_plugin_reload.py
-│   ├─ test_plugin_isolation.py
-│   ├─ test_plugins.py
-│   └─ test_integration.py
+│   │
+│   ├─ bot_core/             # Core bot behaviour tests
+│   │   ├─ test_bot.py
+│   │   ├─ test_permissions.py
+│   │   └─ test_reply.py
+│   │
+│   ├─ commands/             # Command framework tests
+│   │   ├─ test_commands.py
+│   │   ├─ test_commands_crash.py
+│   │   └─ test_commands_system.py
+│   │
+│   ├─ plugins/              # Plugin system tests
+│   │   ├─ test_plugin_integrity.py
+│   │   ├─ test_plugin_isolation.py
+│   │   ├─ test_plugin_manager_property.py
+│   │   ├─ test_plugin_manager_unit.py
+│   │   ├─ test_plugin_reload.py
+│   │   └─ test_plugin_reload_integrity.py
+│   │
+│   └─ integration/
+│       └─ test_integration.py
 │
-├─ config_sample.json    # Example configuration
+├─ config_sample.json        # Example configuration
 ├─ requirements.txt
 ├─ requirements-dev.txt
 ├─ pyproject.toml
@@ -157,14 +172,26 @@ pytest
 
 ## TODO
 
+### Core framework improvements
 * [ ] Improve safe hot-reload to prevent module memory leaks
-* [ ] Move plugin metadata discovery into `plugin_manager`
-* [ ] Add circular dependency detection for plugins
-* [ ] Prevent unloading plugins that are required by others
+* [ ] Move `PLUGIN_META` discovery into `plugin_manager`
 * [ ] Improve plugin validation and error handling
+* [ ] Add better debugging / inspection tools for the command registry
+
+### Plugin system
+* [ ] Add circular dependency detection for plugins
+* [ ] Prevent unloading plugins that are required by other plugins
+* [ ] Improve plugin dependency resolution
+* [ ] Add plugin configuration support
+
+### Core functionality still missing
+* [ ] Implement proper user / permission management
+* [ ] Expand bot configuration and persistence features
+* [ ] Add more essential built-in plugins
+
+### Development & tooling
 * [ ] Expand automated test coverage
 * [ ] Add documentation for plugin development
-* [ ] Implement plugin configuration support
 * [ ] Add CI pipeline (linting and tests)
 
 ---

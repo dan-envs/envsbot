@@ -1,15 +1,50 @@
+"""
+Global pytest configuration and shared fixtures for the test suite.
+
+This file provides:
+
+- Path setup so the project root can be imported during tests.
+- Core fixtures used across the test suite (bot, configuration, XMPP messages).
+- Automatic isolation of the global command registry so tests cannot
+  contaminate each other via shared state.
+
+The command registry reset fixture runs automatically for every test and
+ensures a clean environment before and after execution.
+"""
+
 import importlib
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                                "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from tests.xmpp_fixtures import MockMessage
-from utils.command import Role
+from utils.command import Role, COMMANDS
+
+
+@pytest.fixture(autouse=True)
+def _isolate_command_registry():
+    """
+    Ensure the global command registry is clean for every test.
+
+    The bot command system uses a global registry. Without resetting it,
+    tests that load plugins or register commands can affect later tests.
+    This fixture prevents cross-test contamination.
+    """
+    COMMANDS.index.clear()
+    COMMANDS.by_handler.clear()
+    COMMANDS.by_plugin.clear()
+    COMMANDS.by_prefix.clear()
+
+    yield
+
+    COMMANDS.index.clear()
+    COMMANDS.by_handler.clear()
+    COMMANDS.by_plugin.clear()
+    COMMANDS.by_prefix.clear()
 
 
 @pytest.fixture

@@ -2,10 +2,15 @@
 Plugin reload safety tests.
 
 These tests verify that loading plugins multiple times does not
-duplicate command registrations or corrupt the command registry.
+duplicate command registrations or corrupt the global command registry.
+
+The command system now uses a global registry (COMMANDS) rather than
+storing commands directly on the bot instance, so the tests validate
+that the registry contents remain stable across reload operations.
 """
 
 from utils.plugin_manager import PluginManager
+from utils.command import COMMANDS
 
 
 def test_plugin_reload_does_not_duplicate_commands(bot):
@@ -13,12 +18,13 @@ def test_plugin_reload_does_not_duplicate_commands(bot):
     Ensure reloading plugins does not register duplicate commands.
     """
 
-    initial_commands = set(bot.commands.keys())
-
     pm = PluginManager(bot)
-    pm.load_all()
 
-    reloaded_commands = set(bot.commands.keys())
+    pm.load_all()
+    initial_commands = set(COMMANDS.index.keys())
+
+    pm.load_all()
+    reloaded_commands = set(COMMANDS.index.keys())
 
     assert initial_commands == reloaded_commands, \
         "Plugin reload changed command registry"
@@ -29,12 +35,13 @@ def test_plugin_reload_command_count_stable(bot):
     Ensure command count stays stable after plugin reload.
     """
 
-    initial_count = len(bot.commands)
-
     pm = PluginManager(bot)
-    pm.load_all()
 
-    reloaded_count = len(bot.commands)
+    pm.load_all()
+    initial_count = len(COMMANDS.index)
+
+    pm.load_all()
+    reloaded_count = len(COMMANDS.index)
 
     assert initial_count == reloaded_count, \
         "Plugin reload caused duplicate or missing commands"

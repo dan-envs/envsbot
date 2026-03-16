@@ -13,6 +13,13 @@ from utils.command import Role
 
 @pytest.mark.asyncio
 async def test_ping_command(bot, xmpp_msg):
+    """
+    Ensure the test plugin ping command is executed and produces
+    the expected reply through the command pipeline.
+    """
+
+    # Load the internal test plugin explicitly (bot no longer autoloads plugins)
+    bot.plugins.load("_test")
 
     bot.get_user_role = AsyncMock(return_value=Role.OWNER)
 
@@ -36,13 +43,14 @@ async def test_ping_command(bot, xmpp_msg):
     assert replies
     assert replies[0] == "test pong"
 
+
 @pytest.mark.asyncio
 async def test_unknown_command(bot, xmpp_msg):
     """
     Test that unknown commands are ignored.
     """
 
-    bot.get_user_role = AsyncMock(return_value=1)
+    bot.get_user_role = AsyncMock(return_value=Role.OWNER)
 
     xmpp_msg["body"] = ",doesnotexist"
 

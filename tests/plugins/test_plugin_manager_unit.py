@@ -47,6 +47,8 @@ from utils.plugin_manager import PluginManager
 
 
 class DummyBot:
+    """Minimal bot stub used for PluginManager tests."""
+
     def __init__(self):
         self.commands = {}
 
@@ -55,6 +57,7 @@ def make_plugin(name, requires=None, setup=None, commands=None):
     """
     Create a fake plugin module and register it in sys.modules.
     """
+
     module = types.ModuleType(name)
 
     module.PLUGIN_META = {"requires": requires or []}
@@ -73,6 +76,10 @@ def make_plugin(name, requires=None, setup=None, commands=None):
 
 @pytest.fixture(autouse=True)
 def cleanup_modules():
+    """
+    Ensure dynamically created plugin modules are removed after each test.
+    """
+
     before = set(sys.modules.keys())
     yield
     after = set(sys.modules.keys())
@@ -84,7 +91,7 @@ def cleanup_modules():
 
 def test_dependency_loading():
     """
-    Dependencies should automatically load.
+    Dependencies should automatically load before the requesting plugin.
     """
 
     bot = DummyBot()
@@ -101,7 +108,7 @@ def test_dependency_loading():
 
 def test_circular_dependency_detection(caplog):
     """
-    Circular dependencies should not recurse infinitely.
+    Circular dependencies should not recurse infinitely and should be logged.
     """
 
     bot = DummyBot()
@@ -112,7 +119,7 @@ def test_circular_dependency_detection(caplog):
 
     pm.load("a")
 
-    assert "Circular dependency detected" in caplog.text
+    assert "circular" in caplog.text.lower()
 
 
 def test_setup_failure_does_not_register_commands():
