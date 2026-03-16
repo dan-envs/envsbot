@@ -191,11 +191,7 @@ def resolve_command(text: str):
     """
 
     tokens = text.split()
-
-    if not tokens:
-        return None, []
-
-    tokens = [t.lower() for t in tokens]
+    lower_tokens = [t.lower() for t in tokens]
 
     best_cmd = None
     best_len = 0
@@ -204,10 +200,10 @@ def resolve_command(text: str):
 
         n = len(cmd_tokens)
 
-        if len(tokens) < n:
+        if len(lower_tokens) < n:
             continue
 
-        if tuple(tokens[:n]) == cmd_tokens:
+        if tuple(lower_tokens[:n]) == cmd_tokens:
             if n > best_len:
                 best_cmd = cmd
                 best_len = n
@@ -215,10 +211,8 @@ def resolve_command(text: str):
     if best_cmd is None:
         return None, tokens
 
-    args = tokens[best_len:]
-
+    args = tokens[best_len:]   # ← original case preserved
     return best_cmd, args
-
 
 def has_permission(user_role: Role, required_role: Role) -> bool:
     """
