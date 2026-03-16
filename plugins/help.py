@@ -120,7 +120,7 @@ def _commands_for_plugin(bot, plugin_name, user_role):
             continue
 
         # skip aliases (same Command object)
-        if cmd in seen:
+        if id(cmd) in seen:
             continue
 
         if not check_permission(user_role, cmd):
