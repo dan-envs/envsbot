@@ -9,6 +9,7 @@ All commands rely on the async PluginManager API.
 
 import logging
 from utils.command import command, Role
+from utils.config import config
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ PLUGIN_META = {
     "description": "Runtime plugin management",
     "category": "core",
 }
+prefix = config.get("prefix", ",")
 
 
 @command("plugin list", role=Role.ADMIN, aliases=["plugins list"])
@@ -59,7 +61,7 @@ async def plugin_info(bot, sender, nick, args, msg, is_room):
         {prefix}plugin info <plugin>
     """
     if not args:
-        bot.reply(msg, "Usage: plugin info <plugin>")
+        bot.reply(msg, f"Usage: {prefix}plugin info <plugin>")
         return
 
     name = args[0].lower()
@@ -92,7 +94,7 @@ async def plugin_load(bot, sender, nick, args, msg, is_room):
         {prefix}plugin load all
     """
     if not args:
-        bot.reply(msg, "Usage: plugin load <plugin|all>")
+        bot.reply(msg, f"Usage: {prefix}plugin load <plugin|all>")
         return
 
     target = args[0].lower()
@@ -116,7 +118,7 @@ async def plugin_unload(bot, sender, nick, args, msg, is_room):
         {prefix}plugin unload <plugin>
     """
     if not args:
-        bot.reply(msg, "Usage: plugin unload <plugin>")
+        bot.reply(msg, f"Usage: {prefix}plugin unload <plugin>")
         return
 
     name = args[0].lower()
@@ -143,7 +145,7 @@ async def plugin_reload(bot, sender, nick, args, msg, is_room):
         {prefix}plugin reload all
     """
     if not args:
-        bot.reply(msg, "Usage: plugin reload <plugin|all>")
+        bot.reply(msg, f"Usage: {prefix}plugin reload <plugin|all>")
         return
 
     target = args[0].lower()
