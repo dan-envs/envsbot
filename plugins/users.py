@@ -10,7 +10,7 @@ Provides:
 
 Usage examples:
     {prefix}users info <jid|nick>
-    {prefix}users list
+    {prefix}users list [room]
     {prefix}users role <jid> <role>
     {prefix}users delete <jid>
 """
@@ -336,6 +336,103 @@ async def users_info(bot, sender, nick, args, msg, is_room):
         bot.reply(msg, "⚠️ Failed to fetch user info.")
 
 
+@command("users list", role=Role.ADMIN, aliases=["user list"])
+async def users_list(bot, sender, nick, args, msg, is_room):
+    """
+    List all users of a room. If no room JID is given, use the sender's bare
+    JID (private chat context).
+
+    Usage:
+        {prefix}users list [room_jid]
+    """
+    try:
+        # Import JOINED_ROOMS from rooms plugin
+        rooms_plugin = bot.plugins.plugins.get("rooms")
+        if not rooms_plugin or not hasattr(rooms_plugin, "JOINED_ROOMS"):
+            log.error(
+                "[USERS] ⚠️ Rooms plugin not loaded or JOINED_ROOMS missing."
+            )
+            bot.reply(
+                msg,
+                "⚠️ Rooms plugin not loaded or JOINED_ROOMS missing."
+            )
+            return
+        JOINED_ROOMS = rooms_plugin.JOINED_ROOMS
+
+        if is_room:
+            log.warning(
+                "[USERS] 🚫 users_list called from a room,"
+                " which is not allowed.",
+            )
+            bot.reply(
+                msg,
+                "⚠️ This command can only be used in a private chat"
+                " with the bot.",
+            )
+            return
+
+        # Determine room_jid
+        if args:
+            room_jid = args[0]
+            if room_jid not in JOINED_ROOMS:
+                log.warning(
+                    "[USERS] 🚫 Room JID not found in JOINED_ROOMS: %s",
+                    room_jid
+                )
+                bot.reply(
+                    msg,
+                    f"⚠️ Not joined to room: {room_jid}"
+                )
+                return
+        else:
+            room_jid = msg["from"].bare
+            if room_jid not in JOINED_ROOMS:
+                log.warning(
+                    "[USERS] 🚫 Room JID not in JOINED_ROOMS: %s",
+                    room_jid,
+                )
+                bot.reply(
+                    msg,
+                    f"⚠️ Not joined to room: {room_jid}"
+                )
+                return
+
+        room_info = JOINED_ROOMS[room_jid]
+        nicks = room_info.get("nicks", {})
+        if not nicks:
+            log.info(
+                "[USERS] ℹ️ No users found in room: %s",
+                room_jid
+            )
+            bot.reply(
+                msg,
+                f"ℹ️ No users found in room: {room_jid}"
+            )
+            return
+
+        lines = []
+        for nick, user_info in nicks.items():
+            jid = user_info.get("jid", "—")
+            affiliation = user_info.get("affiliation", "—")
+            role = user_info.get("role", "—")
+            lines.append(
+                f"[{affiliation}/{role}] {nick} ({jid})"
+            )
+
+        lines.sort()
+        output = [f"📋 Users in {room_jid}:"] + lines
+
+        log.info(
+            "[USERS] 📋 Listed users for room: %s",
+            room_jid
+        )
+        bot.reply(msg, "\n".join(output))
+
+    except Exception:
+        log.exception("[USERS] ❌ users list failed")
+        bot.reply(msg, "⚠️ Failed to list users.")
+
+
 @command("users role", role=Role.ADMIN, aliases=["user role"])
 async def users_update(bot, sender, nick, args, msg, is_room):
     """
@@ -386,7 +483,8 @@ async def users_update(bot, sender, nick, args, msg, is_room):
         # --- Get receiver from DB ---
         receiver_role = await bot.get_user_role(receiver)
         if not receiver_role:
-            log.warning(f"[USERS] ⚠️ Update failed, user not found: {receiver}")
+            log.warning(f"[USERS] ⚠️ Update failed,"
+                        f" user not found: {receiver}")
             bot.reply(msg, f"⚠️ User not found: {receiver}")
             return
 
@@ -416,52 +514,23 @@ async def users_update(bot, sender, nick, args, msg, is_room):
             bot.reply(msg, "⛔ You cannot assign a role higher than your own.")
             return
 
-        # --- (optional but recommended) prevent modifying equal/higher users ---
+        # --- prevent modifying equal/higher users ---
         if receiver_role.value <= sender_role.value and jid != receiver:
-            bot.reply(msg, "⛔ You cannot modify users with equal or higher role.")
+            bot.reply(msg, "⛔ You cannot modify users"
+                      " with equal or higher role.")
             return
 
         # --- Set Role in DB ---
         await um.set(receiver, "role", new_role.value)
 
-        log.info(f"[USERS] 🔄 Role updated: {receiver} -> {new_role.name.lower()}")
-        bot.reply(msg, f"🔄 Updated role for {receiver}: {new_role.name.lower()}")
+        log.info(f"[USERS] 🔄 Role updated: {receiver} "
+                 f"-> {new_role.name.lower()}")
+        bot.reply(msg, f"🔄 Updated role for {receiver}:"
+                  f" {new_role.name.lower()}")
 
     except Exception:
         log.exception("[USERS] ❌ users update failed")
         bot.reply(msg, "⚠️ Failed to update user.")
-
-
-@command("users list", role=Role.ADMIN, aliases=["user list"])
-async def users_list(bot, sender, nick, args, msg, is_room):
-    """
-    List all users of all rooms. Will be removed later or restricted to rooms,
-    because of loooooooong lists in future.
-
-    Usage:
-        {prefix}users list
-    """
-    try:
-        users = await bot.db.users.get_all_users()
-
-        if not users:
-            log.info("[USERS] ℹ️ No users in database")
-            bot.reply(msg, "⚠️ No users.")
-            return
-
-        lines = ["📋 Users:"]
-        for user in users:
-            role = role_from_int(user["role"])
-            lines.append(
-                f"- {user['jid']} ({user['nickname']}) [{role.name.lower()}]"
-            )
-
-        log.info(f"[USERS] 📋 Listed {len(users)} users")
-        bot.reply(msg, "\n".join(lines))
-
-    except Exception:
-        log.exception("[USERS] ❌ users list failed")
-        bot.reply(msg, "⚠️ Failed to list users.")
 
 
 @command("users delete", role=Role.ADMIN, aliases=["user delete"])
