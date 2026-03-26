@@ -102,6 +102,37 @@ class PluginManager:
     # INTERNAL HELPERS
     # --------------------------------------------------
 
+    def _detach_module(self, module, name: str):
+        """
+        Deterministically detach a plugin module from the import system.
+
+        This ensures the import system and parent package will not retain
+        references to the old module object, preventing stale code from
+        remaining reachable after unload / failed load.
+
+        This does NOT rely on garbage collection.
+        """
+        modname = getattr(module, "__name__", None) or f"{self.package}.{name}"
+
+        # Remove the module itself from sys.modules
+        sys.modules.pop(modname, None)
+
+        # Remove attribute from parent package (e.g. plugins.help)
+        pkg_name, _, child = modname.rpartition(".")
+        if pkg_name and child:
+            pkg = sys.modules.get(pkg_name)
+            if pkg is not None and getattr(pkg, child, None) is module:
+                try:
+                    delattr(pkg, child)
+                except Exception:
+                    # Best-effort cleanup; should not mask unload errors
+                    log.debug("[PLUGIN] failed to delattr(%s, %s)", pkg_name, child, exc_info=True)
+
+        # Remove any submodules under this plugin namespace (plugins.<name>.*)
+        prefix = modname + "."
+        for k in [k for k in sys.modules.keys() if k.startswith(prefix)]:
+            sys.modules.pop(k, None)
+
     async def _run_hook(self, hook):
         """
         Execute a plugin hook safely.
@@ -126,6 +157,8 @@ class PluginManager:
         Returns:
             module: Imported module.
         """
+        # Helps when tests create or modify modules dynamically.
+        importlib.invalidate_caches()
         return await asyncio.to_thread(importlib.import_module, module_path)
 
     # --------------------------------------------------
@@ -157,6 +190,8 @@ class PluginManager:
 
         _stack = _stack + [name]
 
+        module = None
+
         try:
             log.info("[PLUGIN] loading: %s", name)
 
@@ -184,12 +219,19 @@ class PluginManager:
 
                     log.info("[PLUGIN] loaded: %s", name)
                 except Exception:
-                    log.exception("[PLUGIN] ❌Failed to load plugin (on_load)"
-                                  f": '{name}'")
+                    log.exception(
+                        "[PLUGIN] ❌Failed to load plugin (on_load): '%s'",
+                        name,
+                    )
+                    # Remove any commands that might have been registered
                     COMMANDS.remove_by_plugin(name)
+                    # Ensure the partially-imported module is not left reachable
+                    if module is not None:
+                        self._detach_module(module, name)
                     raise
 
         finally:
+            # no-op: kept for symmetry / future hooks
             pass
 
     async def unload(self, name):
@@ -226,12 +268,11 @@ class PluginManager:
                 from utils.command import debug_leaks
                 debug_leaks()
 
-            # Cleanup metadata and module
+            # Cleanup metadata
             self.meta.pop(name, None)
 
-            modname = module.__name__
-            module.__dict__.clear()
-            sys.modules.pop(modname, None)
+            # Deterministically detach from import system (no GC reliance)
+            self._detach_module(module, name)
 
             log.info("[PLUGIN] unloaded: %s", name)
             return True

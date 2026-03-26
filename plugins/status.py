@@ -63,10 +63,9 @@ async def show_status(bot, sender_jid, nick, args, msg, is_room):
     else:
         text = f"Current status {emoji} ({show})"
 
-    bot.send_message(
-        mto=target,
-        mbody=text,
-        mtype=mtype
+    bot.reply(
+        msg,
+        text,
     )
 
 

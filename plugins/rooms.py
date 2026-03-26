@@ -108,6 +108,15 @@ async def on_load(bot):
         "groupchat_presence",
         partial(on_muc_presence, bot))
 
+    # get muc and rooms_db with guard
+    muc = bot.plugin["xep_0045"]
+    rooms_db = bot.db.rooms
+    if muc is None or rooms_db is None:
+        log.warning("[ROOMS] ⚠️missing dependencies: "
+                    f"rooms_db={'OK' if rooms_db is not None else 'missing'} "
+                    f"xep_0045={'OK' if muc is not None else 'missing'}")
+        return
+
     # Case 1: reload → restore previous runtime state
     reload_rooms = getattr(bot, "_reload_rooms", None)
 
@@ -116,7 +125,7 @@ async def on_load(bot):
 
         for room, data in reload_rooms.items():
             # --- Get room data from DB ---
-            db_room = await bot.db.rooms.get(room)
+            db_room = await rooms_db.get(room)
             if db_room:
                 _, db_nick, db_autojoin, db_status = db_room
             else:
@@ -149,7 +158,7 @@ async def on_load(bot):
                 "nicks": {}
             }
 
-            await bot.plugin["xep_0045"].join_muc(
+            await muc.join_muc(
                 room,
                 nick,
                 pshow=bot.presence.status["show"],
@@ -160,7 +169,6 @@ async def on_load(bot):
     else:
         # Case 2: normal startup → use config
         await autojoin_rooms(bot)
-
 
 # -------------------------------------------------
 # ON_UNLOAD teardown function.
@@ -266,9 +274,16 @@ async def autojoin_rooms(bot):
     """
     Join all rooms marked with autojoin in the database.
     """
+    # get muc and rooms_db with guard
     muc = bot.plugin["xep_0045"]
+    rooms_db = bot.db.rooms
+    if muc is None or rooms_db is None:
+        log.warning("[ROOMS] ⚠️missing dependencies: "
+                    f"rooms_db={'OK' if rooms_db is not None else 'missing'} "
+                    f"xep_0045={'OK' if muc is not None else 'missing'}")
+        return
 
-    rows = await bot.db.rooms.list()
+    rows = await rooms_db.list()
     for room_jid, nick, autojoin, status in rows:
         if not autojoin:
             continue

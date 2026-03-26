@@ -121,6 +121,14 @@ async def on_load(bot):
     """
     Initialize plugin and register MUC handlers.
     """
+    # for integrity Unit Tests
+    db = getattr(bot, "db", None)
+    users_api = getattr(db, "users", None) if db else None
+
+    if users_api is None or not hasattr(users_api, "plugin"):
+        log.info("[USERS] on_load: skipped init (missing db.users)")
+        return
+
     # --- initialize _nick_index on UserManager
     store = bot.db.users.plugin("users")
     bot.db.users._nick_index = await store.get_global("_nick_index", {})

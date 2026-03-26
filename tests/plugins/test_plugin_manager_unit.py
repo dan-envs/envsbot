@@ -39,6 +39,7 @@ robustness against arbitrary dependency graphs is verified separately
 using property-based tests in `test_plugin_manager_property.py`.
 """
 
+import asyncio
 import types
 import sys
 import pytest
@@ -50,7 +51,7 @@ class DummyBot:
     """Minimal bot stub used for PluginManager tests."""
 
 
-def make_plugin(name, requires=None, setup=None, commands=None):
+def make_plugin(name, requires=None, on_load=None, commands=None):
     """
     Create a fake plugin module and register it in sys.modules.
     """
@@ -59,8 +60,8 @@ def make_plugin(name, requires=None, setup=None, commands=None):
 
     module.PLUGIN_META = {"requires": requires or []}
 
-    if setup:
-        module.setup = setup
+    if on_load:
+        module.on_load = on_load
 
     if commands:
         for cmd_name, func in commands.items():
@@ -97,7 +98,7 @@ def test_dependency_loading():
     make_plugin("plugins.dep")
     make_plugin("plugins.main", requires=["dep"])
 
-    pm.load("main")
+    asyncio.run(pm.load("main"))
 
     assert "main" in pm.plugins
     assert "dep" in pm.plugins
@@ -114,7 +115,7 @@ def test_circular_dependency_detection(caplog):
     make_plugin("plugins.a", requires=["b"])
     make_plugin("plugins.b", requires=["a"])
 
-    pm.load("a")
+    asyncio.run(pm.load("a"))
 
     assert "circular" in caplog.text.lower()
 
@@ -137,9 +138,9 @@ def test_setup_failure_does_not_register_commands():
 
     make_plugin(
         "plugins.bad",
-        setup=setup_fail,
+        on_load=setup_fail,
         commands={"test": handler},
     )
 
     with pytest.raises(RuntimeError):
-        pm.load("bad")
+        asyncio.run(pm.load("bad"))

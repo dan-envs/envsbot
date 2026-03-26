@@ -396,7 +396,8 @@ class Bot(slixmpp.ClientXMPP):
 
         # Commands which require permissions of at least "moderator"
         # shouldn't be used in GroupChat
-        if user_role <= Role.MODERATOR and is_room:
+        required_role = getattr(cmd_obj, "role", Role.NONE)
+        if required_role <= Role.MODERATOR and is_room:
             self.reply(msg, "❌Use this command in MUC Direct Message only.")
             return
 

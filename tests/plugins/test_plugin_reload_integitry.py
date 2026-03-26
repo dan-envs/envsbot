@@ -75,7 +75,7 @@ def _clean_command_registry():
     COMMANDS.by_prefix.clear()
 
 
-def test_plugin_reload_integrity_all(bot):
+async def test_plugin_reload_integrity_all(bot):
     """Repeated plugin reloads must not corrupt the command registry."""
 
     pm = bot.plugins
@@ -84,11 +84,11 @@ def test_plugin_reload_integrity_all(bot):
     for plugin in plugins:
 
         try:
-            pm.unload(plugin)
+            await pm.unload(plugin)
         except Exception:
             pass
 
-        pm.load(plugin)
+        await pm.load(plugin)
 
         before = snapshot(plugin)
 
@@ -100,7 +100,7 @@ def test_plugin_reload_integrity_all(bot):
 
         for _ in range(RELOAD_COUNT):
 
-            pm.reload(plugin)
+            await pm.reload(plugin)
 
             now = snapshot(plugin)
 

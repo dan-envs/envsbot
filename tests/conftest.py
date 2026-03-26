@@ -13,6 +13,7 @@ ensures a clean environment before and after execution.
 """
 
 import importlib
+import asyncio
 import sys
 import os
 
@@ -63,8 +64,7 @@ def mock_config(monkeypatch):
 
 
 @pytest.fixture
-def bot(mock_config):
-
+async def bot(mock_config):
     if "bot" in sys.modules:
         importlib.reload(sys.modules["bot"])
 
@@ -75,11 +75,17 @@ def bot(mock_config):
     bot.send_message = MagicMock()
     bot.make_message = MagicMock()
 
+    bot.get_roster = AsyncMock()
+
     bot.get_user_role = AsyncMock(return_value=Role.OWNER)
     bot.connect = AsyncMock()
 
     bot.db.connect = AsyncMock()
     bot.db.close = AsyncMock()
+
+    # IMPORTANT: tests need commands registered, but production does that
+    # in session_start (async). Force plugin loading here.
+    await bot.plugins.load_all()
 
     return bot
 

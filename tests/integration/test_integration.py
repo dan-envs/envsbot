@@ -30,11 +30,17 @@ async def test_private_message_triggers_command(bot, xmpp_msg):
 @pytest.mark.asyncio
 async def test_groupchat_command_execution(bot, xmpp_msg):
     """
-    Ensure commands execute correctly when received in a groupchat.
+    Ensure non-privileged commands execute correctly when received in a groupchat.
+
+    Notes
+    -----
+    Internal/test commands (plugin filenames starting with "_") are elevated
+    to Role.ADMIN by PluginManager. Privileged commands are expected to be
+    blocked in groupchat and must be used via direct message instead.
     """
 
     xmpp_msg["type"] = "groupchat"
-    xmpp_msg["body"] = ",_ping"
+    xmpp_msg["body"] = ",status"
 
     bot._reply_rate = {}
 
@@ -43,12 +49,11 @@ async def test_groupchat_command_execution(bot, xmpp_msg):
         xmpp_msg["from"].bare,
         "nick",
         xmpp_msg,
-        True
+        True,
     )
 
-    # If the test plugin is loaded, we should see the reply
-    if hasattr(xmpp_msg, "replies"):
-        assert any("test pong" in r for r in xmpp_msg.replies)
+    # "status" replies using bot.reply (so MockMessage.replies is populated)
+    assert any("Current status" in r for r in xmpp_msg.replies)
 
 
 @pytest.mark.asyncio
@@ -57,7 +62,7 @@ async def test_bot_does_not_reply_to_itself(bot, xmpp_msg):
     Ensure the bot ignores messages that originate from itself in a MUC.
     """
 
-    xmpp_msg["body"] = ",_ping"
+    xmpp_msg["body"] = ",status"
     xmpp_msg["type"] = "groupchat"
 
     # Simulate the bot's own nickname in the room
