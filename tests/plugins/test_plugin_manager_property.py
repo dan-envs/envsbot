@@ -69,7 +69,7 @@ plugin_names = st.lists(
 
 @settings(max_examples=100)
 @given(plugin_names)
-def test_loader_never_crashes(plugin_names):
+async def test_loader_never_crashes(plugin_names):
     """
     Property test: loading plugins must never crash regardless
     of dependency graph layout.
@@ -94,6 +94,6 @@ def test_loader_never_crashes(plugin_names):
     # Attempt loading each plugin
     for name in graph.keys():
         try:
-            pm.load(name)
+            await pm.load(name)
         except Exception as e:
             pytest.fail(f"PluginManager crashed on graph {graph}: {e}")

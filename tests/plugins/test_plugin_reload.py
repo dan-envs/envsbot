@@ -13,34 +13,34 @@ from utils.plugin_manager import PluginManager
 from utils.command import COMMANDS
 
 
-def test_plugin_reload_does_not_duplicate_commands(bot):
+async def test_plugin_reload_does_not_duplicate_commands(bot):
     """
     Ensure reloading plugins does not register duplicate commands.
     """
 
-    pm = PluginManager(bot)
+    pm = bot.plugins
 
-    pm.load_all()
+    await pm.load_all()
     initial_commands = set(COMMANDS.index.keys())
 
-    pm.load_all()
+    await pm.load_all()
     reloaded_commands = set(COMMANDS.index.keys())
 
     assert initial_commands == reloaded_commands, \
         "Plugin reload changed command registry"
 
 
-def test_plugin_reload_command_count_stable(bot):
+async def test_plugin_reload_command_count_stable(bot):
     """
     Ensure command count stays stable after plugin reload.
     """
 
-    pm = PluginManager(bot)
+    pm = bot.plugins
 
-    pm.load_all()
+    await pm.load_all()
     initial_count = len(COMMANDS.index)
 
-    pm.load_all()
+    await pm.load_all()
     reloaded_count = len(COMMANDS.index)
 
     assert initial_count == reloaded_count, \
