@@ -18,7 +18,7 @@ async def test_plugin_reload_does_not_duplicate_commands(bot):
     Ensure reloading plugins does not register duplicate commands.
     """
 
-    pm = bot.plugins
+    pm = bot.bot_plugins
 
     await pm.load_all()
     initial_commands = set(COMMANDS.index.keys())
@@ -35,7 +35,7 @@ async def test_plugin_reload_command_count_stable(bot):
     Ensure command count stays stable after plugin reload.
     """
 
-    pm = bot.plugins
+    pm = bot.bot_plugins
 
     await pm.load_all()
     initial_count = len(COMMANDS.index)

@@ -85,7 +85,7 @@ async def bot(mock_config):
 
     # IMPORTANT: tests need commands registered, but production does that
     # in session_start (async). Force plugin loading here.
-    await bot.plugins.load_all()
+    await bot.bot_plugins.load_all()
 
     return bot
 

@@ -83,7 +83,7 @@ async def on_groupchat_message(bot, msg):
         return
 
     # Check Room Affiliation
-    rooms_plugin = bot.plugins.plugins.get("rooms")
+    rooms_plugin = bot.bot_plugins.plugins.get("rooms")
     if not rooms_plugin:
         return
     if not rooms_plugin.bot_has_privilege(room):
@@ -136,11 +136,11 @@ async def on_load(bot):
         bot.db.users._nick_index = {}
 
     # --- add event handlers ---
-    bot.plugins.register_event(
+    bot.bot_plugins.register_event(
         "users",
         "groupchat_presence",
         partial(on_muc_presence, bot))
-    bot.plugins.register_event(
+    bot.bot_plugins.register_event(
         "users",
         "groupchat_message",
         partial(on_groupchat_message, bot))
@@ -355,7 +355,7 @@ async def users_list(bot, sender, nick, args, msg, is_room):
     """
     try:
         # Import JOINED_ROOMS from rooms plugin
-        rooms_plugin = bot.plugins.plugins.get("rooms")
+        rooms_plugin = bot.bot_plugins.plugins.get("rooms")
         if not rooms_plugin or not hasattr(rooms_plugin, "JOINED_ROOMS"):
             log.error(
                 "[USERS] ⚠️ Rooms plugin not loaded or JOINED_ROOMS missing."

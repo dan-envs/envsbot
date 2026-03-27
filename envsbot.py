@@ -65,7 +65,7 @@ class Bot(slixmpp.ClientXMPP):
         self.db = DatabaseManager(config.get("db", "bot.db"))
 
         # Plugin Manager
-        self.plugins = PluginManager(self)
+        self.bot_plugins = PluginManager(self)
 
         self.add_event_handler("session_start", self.on_start)
         self.add_event_handler("groupchat_message", self.on_muc_message)
@@ -84,7 +84,7 @@ class Bot(slixmpp.ClientXMPP):
         # Connect to DB
         await self.db.connect()
         # load plugins
-        await self.plugins.load_all()
+        await self.bot_plugins.load_all()
         # send presence again
         self.presence.broadcast()
         # set automatic mutual subscriptions

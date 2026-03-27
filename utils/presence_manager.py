@@ -44,7 +44,7 @@ class PresenceManager:
         self.bot.send_presence(pshow=show, pstatus=status)
 
         # --- Get JOINED_ROOMS from "rooms" plugin ---
-        rooms_plugin = self.bot.plugins.plugins.get("rooms", None)
+        rooms_plugin = self.bot.bot_plugins.plugins.get("rooms", None)
         if rooms_plugin is not None:
             rooms = dict(rooms_plugin.JOINED_ROOMS)
             for room in rooms.keys():

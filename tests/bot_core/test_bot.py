@@ -20,7 +20,7 @@ async def test_ping_command(bot, xmpp_msg):
 
     # Load the internal test plugin explicitly
     # (bot no longer autoloads plugins)
-    await bot.plugins.load("_test")
+    await bot.bot_plugins.load("_test")
 
     bot.get_user_role = AsyncMock(return_value=Role.OWNER)
 

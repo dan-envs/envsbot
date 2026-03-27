@@ -33,7 +33,7 @@ async def plugin_list(bot, sender, nick, args, msg, is_room):
     Usage:
         {prefilx}plugins list
     """
-    categories = await bot.plugins.list_detailed()
+    categories = await bot.bot_plugins.list_detailed()
 
     lines = ["Plugin status"]
 
@@ -65,7 +65,7 @@ async def plugin_info(bot, sender, nick, args, msg, is_room):
         return
 
     name = args[0].lower()
-    meta = await bot.plugins.get_plugin_info(name)
+    meta = await bot.bot_plugins.get_plugin_info(name)
 
     if not meta:
         bot.reply(msg, f"Plugin '{name}' not found.")
@@ -100,12 +100,12 @@ async def plugin_load(bot, sender, nick, args, msg, is_room):
     target = args[0].lower()
 
     if target == "all":
-        for name in bot.plugins.available():
-            await bot.plugins.load(name)
+        for name in bot.bot_plugins.available():
+            await bot.bot_plugins.load(name)
         bot.reply(msg, "All plugins loaded.")
         return
 
-    await bot.plugins.load(target)
+    await bot.bot_plugins.load(target)
     bot.reply(msg, f"Plugin '{target}' loaded.")
 
 
@@ -127,7 +127,7 @@ async def plugin_unload(bot, sender, nick, args, msg, is_room):
         bot.reply(msg, "Cannot unload plugin manager.")
         return
 
-    success = await bot.plugins.unload(name)
+    success = await bot.bot_plugins.unload(name)
 
     if success:
         bot.reply(msg, f"Plugin '{name}' unloaded.")
@@ -151,13 +151,13 @@ async def plugin_reload(bot, sender, nick, args, msg, is_room):
     target = args[0].lower()
 
     if target == "all":
-        for name in bot.plugins.list():
+        for name in bot.bot_plugins.list():
             if name != "plugins":
-                await bot.plugins.reload(name)
+                await bot.bot_plugins.reload(name)
 
-        await bot.plugins.reload("plugins")
+        await bot.bot_plugins.plugins.reload("plugins")
         bot.reply(msg, "All plugins reloaded.")
         return
 
-    await bot.plugins.reload(target)
+    await bot.bot_plugins.reload(target)
     bot.reply(msg, f"Plugin '{target}' reloaded.")

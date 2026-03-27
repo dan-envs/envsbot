@@ -103,7 +103,7 @@ async def on_muc_presence(bot, pres):
 async def on_load(bot):
 
     # --- add event handlers ---
-    bot.plugins.register_event(
+    bot.bot_plugins.register_event(
         "rooms",
         "groupchat_presence",
         partial(on_muc_presence, bot))
