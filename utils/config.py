@@ -11,6 +11,7 @@ DEFAULT_CONFIG = {
     "loglevel": "INFO",
 }
 
+
 def load_config():
     cfg = DEFAULT_CONFIG.copy()
 
@@ -28,6 +29,7 @@ def load_config():
 
 # global config object (backwards compatible)
 config = load_config()
+
 
 def setup_logging():
     """

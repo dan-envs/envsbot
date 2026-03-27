@@ -9,9 +9,25 @@ log = logging.getLogger(__name__)
 # -------------------------------------------------
 
 class PresenceManager:
+    """
+    Manages the presence status of the bot, including broadcasting
+    presence updates and handling joined rooms.
+
+    Attributes:
+        bot: The bot instance using this manager.
+        status: A dictionary containing the current presence 'show'
+            and 'status' message.
+        joined_rooms: A dictionary to track rooms the bot has joined.
+        emojis: A mapping of presence states to emoji representations.
+    """
 
     def __init__(self, bot):
+        """
+        Initialize the PresenceManager with a bot instance.
 
+        Args:
+            bot: The bot object that this manager will control presence for.
+        """
         self.bot = bot
 
         self.status = {
@@ -30,14 +46,23 @@ class PresenceManager:
         }
 
     def update(self, show, status):
+        """
+        Update the bot's presence status and broadcast the change.
 
+        Args:
+            show: The presence state (e.g., 'online', 'away').
+            status: The status message to display.
+        """
         self.status["show"] = show
         self.status["status"] = status
 
         self.broadcast()
 
     def broadcast(self):
-
+        """
+        Broadcast the current presence status to all relevant targets,
+        including joined rooms if available. Logs the status update.
+        """
         show = self.status["show"]
         status = self.status["status"]
 
@@ -57,6 +82,15 @@ class PresenceManager:
                  f"'{show}': [{status}]")
 
     def emoji(self, show=None):
+        """
+        Get the emoji representation for a given presence state.
 
+        Args:
+            show: The presence state to get the emoji for. If None,
+                uses the current status.
+
+        Returns:
+            str: The emoji corresponding to the presence state.
+        """
         show = show or self.status["show"]
         return self.emojis.get(show, "")
