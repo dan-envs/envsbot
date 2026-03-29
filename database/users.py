@@ -71,7 +71,7 @@ class ProfileStore:
             self.um._profile_cache[jid] = data
 
         self.um._profile_cache[jid][key] = value
-        self.um_profile_meta[jid] = now
+        self.um._profile_meta[jid] = now
         self.um._dirty_profiles.add(jid)
 
     async def delete(self, jid: str, key: str):
