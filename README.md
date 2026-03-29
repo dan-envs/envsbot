@@ -2,9 +2,17 @@
 
 A modular XMPP bot built with Python 3 and slixmpp.
 
+---
+
+**Mirrors:**
+- https://git.envs.net/dan/envsbot
+- https://github.com/dan-envs/envsbot
+
+---
+
 ## 🌐 envs pubnix/tilde
 
-envsbot is developed with the **envs pubnix** environment in mind, but is not limited to it. It takes the tildebot as model and hopefully will include all of its features and more (especially for XMPP) in future.
+envsbot is developed with the **envs pubnix** environment in mind, but is not limited to it. It takes the tildebot IRC bot as model and hopefully will include all of its features and more (especially for XMPP) in future.
 
 ---
 
