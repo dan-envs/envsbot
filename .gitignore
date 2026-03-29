@@ -7,6 +7,7 @@ tmp/
 .coverage
 config.json
 delete_vcard.py
+profile_hash.asc
 avatar_hash.asc
 vcard_hash.asc
 bot.db

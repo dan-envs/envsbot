@@ -2,21 +2,23 @@
 Bot profile initialization plugin.
 
 This plugin manages the public profile of the bot on the XMPP
-network during session startup.
+network and the profile for the bot in its own "users_profile"
+database table during session startup.
 
 No Commands
 -----------
-This plugin has no commands, it is just run at startup and sets the
-vCard and the Avatar if they've changed.
+This plugin has no commands, it is just run at startup or on reload
+and sets the DB profile, vCard and the Avatar if they've changed.
 
 Responsibilities
 ----------------
+• Insert or update the bots own database profile
 • Publish or update the bot vCard (XEP-0054)
 • Publish or update the bot avatar (XEP-0084)
 • Do Avatar publishing using PEP (Personal Eventing Protocol) (XEP-0163)
 • Avoid unnecessary updates using SHA1 hash comparison
 
-If the configured avatar or vCard data has not changed since
+If the configured DB profile, avatar or vCard data has not changed since
 the last run, the plugin skips the update to reduce network
 traffic.
 
@@ -35,7 +37,8 @@ PLUGIN_META = {
     "name": "profile",
     "version": "0.1.0",
     "description": "Bot avatar and vCard profile management",
-    "category": "core"
+    "category": "core",
+    "requires": ["users"],
 }
 
 # Setup logging
@@ -43,6 +46,7 @@ log = logging.getLogger(__name__)
 
 AVATAR_HASH_FILE = "avatar_hash.asc"
 VCARD_HASH_FILE = "vcard_hash.asc"
+PROFILE_HASH_FILE = "profile_hash.asc"
 
 
 # -------------------------------------------------
@@ -223,6 +227,75 @@ async def update_vcard(bot):
 
 
 # -------------------------------------------------
+# PROFILE UPDATE
+# -------------------------------------------------
+async def update_profile(bot):
+    """
+    Update the profile in the bot's own database
+
+    Parameters
+    ----------
+    bot : Bot
+        Instance of the bot class derived from the Slixmpp client.
+
+    Process
+    -------
+    1. Retrieve the "profile" configuration from ``config``.
+    2. Serialize the configuration and compute its SHA1 hash.
+    3. Compare the hash with the previously stored hash.
+    4. If unchanged, skip the update.
+    5. Otherwise update profile
+
+    Notes
+    -----
+    The profile is taken from the config.json file (like the vcard)
+    and only updated when it changes.
+    """
+
+    cfg = config.get("profile")
+
+    if not cfg:
+        return
+
+    serialized = json.dumps(cfg, sort_keys=True).encode()
+
+    new_hash = sha1(serialized)
+    stored_hash = read_hash(PROFILE_HASH_FILE)
+
+    if stored_hash == new_hash:
+        log.info("[PROFILE] DB profile unchanged — skipping update")
+        return
+
+    try:
+        um = bot.db.users
+        if await um.get(str(bot.boundjid.bare)) is None:
+            await um.create(str(bot.boundjid.bare), config.get("nick", None))
+        profile_store = bot.db.users.profile()
+
+        await profile_store.set(str(bot.boundjid.bare), "FULLNAME",
+                                cfg.get("FULLNAME", None))
+        await profile_store.set(str(bot.boundjid.bare), "SPECIES",
+                                cfg.get("SPECIES", None))
+        await profile_store.set(str(bot.boundjid.bare), "PRONOUNS",
+                                cfg.get("PRONOUNS", None))
+        await profile_store.set(str(bot.boundjid.bare), "TIMEZONE",
+                                cfg.get("TIMEZONE", None))
+        await profile_store.set(str(bot.boundjid.bare), "LOCATION",
+                                cfg.get("LOCATION", None))
+        await profile_store.set(str(bot.boundjid.bare), "EMAIL",
+                                cfg.get("EMAIL", None))
+        await profile_store.set(str(bot.boundjid.bare), "URLS",
+                                cfg.get("URLS", []))
+
+        write_hash(PROFILE_HASH_FILE, new_hash)
+
+        log.info("[PROFILE]✅ DB profile updated")
+
+    except Exception as e:
+        log.error(f"[PROFILE]❌vCard update failed: {e}")
+
+
+# -------------------------------------------------
 # AVATAR UPDATE
 # -------------------------------------------------
 async def update_avatar(bot):
@@ -327,6 +400,8 @@ async def setup_profile(bot):
     """
 
     await bot.get_roster()
+
+    await update_profile(bot)
 
     await update_vcard(bot)
 
