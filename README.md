@@ -2,125 +2,80 @@
 
 A modular XMPP bot built with Python 3 and slixmpp.
 
-> ⚠️ **Early Stage Warning**
-> This project is still in active development. Features may change, break, or be incomplete.
-
----
-
 ## 🌐 envs pubnix/tilde
 
-envsbot is developed with the **envs pubnix** environment in mind, but is not limited to it.
+envsbot is developed with the **envs pubnix** environment in mind, but is not limited to it. It takes the tildebot as model and hopefully will include all of its features and more (especially for XMPP) in future.
 
 ---
 
-## 📖 About
+## About
 
-envsbot is a lightweight, plugin-driven XMPP bot designed for flexibility and experimentation.
+envsbot is now in a usable state: the core framework is mostly stable, although probably not bug-free, supports dynamic plugin loading, and provides a structured command system. I can begin developing user plugins to extend the bot's functionality.
 
----
-
-## ✨ Features
-
-* Plugin-based architecture
-* Dynamic plugin loading / reloading
-* Command system via decorators
-* Structured database layer (in progress)
-* Test suite for core systems and plugins
+- Plugin-based architecture
+- Dynamic plugin loading/reloading
+- Command decorators
+- SQLite-backed database layer
+- Test suite for core and plugins
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
-```id="1ly8zn"
+```
 envsbot/
-├── envsbot.py         # Main bot entrypoint
-├── plugins/           # Plugin modules
-├── utils/             # Core systems (commands, plugin manager)
-├── database/          # Database layer (WIP)
-├── tests/             # Test suite
-├── requirements.txt
-└── README.md
+├── envsbot.py               # Main entry point
+├── plugins/                 # User and core plugins
+├── database/                # Database models and management
+├── utils/                   # Utility modules (plugin manager, config, etc.)
+├── tests/                   # Test suite for core and plugins
+├── README.md
+└── LICENSE
 ```
 
 ---
 
-## ⚙️ Installation
+## Installation
 
-```bash id="06szmh"
-git clone https://github.com/yourusername/envsbot.git
-cd envsbot
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-pip install -r requirements.txt
-```
+1. **Clone the repository:**
+   ```sh
+   git clone https://github.com/yourusername/envsbot.git
+   cd envsbot
+   ```
 
----
+2. **Create a virtual environment (recommended):**
+   ```sh
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
 
-## ▶️ Running the Bot
+3. **Install dependencies:**
+   ```sh
+   pip install -r requirements.txt
+   ```
 
-```bash id="hw0mgg"
-python envsbot.py
-```
+4. **Configure the bot:**
+   - Copy `config_sample.json` to `config.json` and edit with your XMPP credentials and settings.
 
----
-
-## 🧩 Plugins (Quick Overview)
-
-Plugins live in the `plugins/` directory and extend the bot’s functionality.
-
-They can:
-
-* Register commands
-* Hook into bot events
-* Be dynamically loaded or reloaded at runtime
-
-Example plugins include:
-
-* `help.py`
-* `status.py`
-* `rooms.py`
-* `users.py`
+5. **Run the bot:**
+   ```sh
+   python envsbot.py
+   ```
 
 ---
 
-## 💬 Commands
+## TODO
 
-Commands are defined using decorators in the command system.
-
-Plugins can register commands that users trigger via chat messages.
-
-*(More detailed documentation coming later.)*
-
----
-
-## 🧪 Testing
-
-Run tests with:
-
-```bash id="zqopwb"
-pytest
-```
-
-The project includes tests for:
-
-* Command system
-* Plugin loading and isolation
-* Core functionality
+- [ ] Add more plugins
+- [ ] Improve documentation and usage examples
+- [ ] Enhance error handling and logging
+- [ ] Choosable Plugins on startup in configuration file
+- [ ] Improve documentation for configuration file
 
 ---
 
-## 🛠️ Development Status
+## License
 
-This project is under active development. Current areas in progress:
-
-* Database layer completion
-* Plugin dependency handling improvements
-* Additional core plugins
-
----
-
-## 📄 License
-
-MIT License
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
