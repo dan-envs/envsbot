@@ -35,7 +35,7 @@ from utils.config import config
 
 PLUGIN_META = {
     "name": "profile",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Bot avatar and vCard profile management",
     "category": "core",
 }
@@ -279,6 +279,8 @@ async def update_profile(bot):
                                 cfg.get("PRONOUNS", None))
         await profile_store.set(str(bot.boundjid.bare), "TIMEZONE",
                                 cfg.get("TIMEZONE", None))
+        await profile_store.set(str(bot.boundjid.bare), "BIRTHDAY",
+                                cfg.get("BIRTHDAY", None))
         await profile_store.set(str(bot.boundjid.bare), "LOCATION",
                                 cfg.get("LOCATION", None))
         await profile_store.set(str(bot.boundjid.bare), "EMAIL",

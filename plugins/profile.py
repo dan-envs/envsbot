@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 PLUGIN_META = {
     "name": "profile",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "User profile management",
     "category": "info",
     "requires": ["rooms"],
