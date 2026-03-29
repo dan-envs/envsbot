@@ -135,7 +135,7 @@ async def weather_command(bot, sender_jid, nick, args, msg, is_room):
                        + f" Use {config.get('prefix', ',')}config"
                        + " location <your location>")
         return
-    url = f"https://wttr.in/{location}?format=3&m"
+    url = f"https://wttr.in/{location}?format=4&m"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=8) as resp:
