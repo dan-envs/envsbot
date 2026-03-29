@@ -155,7 +155,7 @@ async def plugin_reload(bot, sender, nick, args, msg, is_room):
             if name != "plugins":
                 await bot.bot_plugins.reload(name)
 
-        await bot.bot_plugins.plugins.reload("plugins")
+        await bot.bot_plugins.reload("plugins")
         bot.reply(msg, "All plugins reloaded.")
         return
 
