@@ -531,7 +531,7 @@ async def get_urls(bot, sender_jid, nick, args, msg, is_room):
 
 def _is_muc_pm(msg):
     return (
-        msg.get("type") == "chat"
+        msg.get("type") in ("chat", "normal")
         and hasattr(msg["from"], "bare")
         and "@" in str(msg["from"].bare)
         and str(msg["from"].bare) in JOINED_ROOMS
@@ -798,7 +798,7 @@ async def show_profile(bot, sender_jid, nick, args, msg, is_room):
         # Room context
         if (
             is_room or (
-                msg.get("type") in ["chat", "normal"]
+                msg.get("type") in ("chat", "normal")
                 and hasattr(msg["from"], "bare")
                 and "@" in str(msg["from"].bare)
                 and str(msg["from"].bare) in JOINED_ROOMS
