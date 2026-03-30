@@ -131,7 +131,8 @@ class Bot(slixmpp.ClientXMPP):
         """
         Resolve a user's role using config and database.
         """
-
+        import slixmpp
+        from plugins.rooms import JOINED_ROOMS
         jid = slixmpp.JID(jid).bare
 
         owner_jid = slixmpp.JID(config["owner"]).bare
@@ -146,9 +147,19 @@ class Bot(slixmpp.ClientXMPP):
             return Role.NONE
 
         try:
-            return role_from_int(row['role'])
+            db_role = role_from_int(row['role'])
         except KeyError:
             return Role.NONE
+
+        # Elevate to MODERATOR if user is admin/owner in any joined room
+        for room, data in JOINED_ROOMS.items():
+            nicks = data.get("nicks", {})
+            for nick_info in nicks.values():
+                if str(nick_info.get("jid")) == str(jid):
+                    affiliation = nick_info.get("affiliation", "")
+                    if affiliation in ("admin", "owner") and db_role > Role.MODERATOR:
+                        return Role.MODERATOR
+        return db_role
 
     def reply(self, msg, text, mention=True, thread=True, rate_limit=True):
         """

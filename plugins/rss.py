@@ -131,13 +131,13 @@ async def restart_all_tasks(bot):
         await ensure_task(bot, url, data["period"], data["rooms"])
 
 
-@command("rss", role=Role.ADMIN)
+@command("rss", role=Role.MODERATOR)
 async def rss_command(bot, sender_jid, nick, args, msg, is_room):
     """
     Manage RSS feeds.
 
     Usage:
-        {prefix}rss add <url> <period_seconds> <room1> [room2 ...]
+        {prefix}rss add <url>
         {prefix}rss delete <url>
         {prefix}rss list
     """
@@ -146,59 +146,110 @@ async def rss_command(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, "Usage: rss <add|delete|list> ...")
         return
     sub = args[0].lower()
+    room = None
+    if is_room or (
+        msg.get("type") in ("chat", "normal")
+        and hasattr(msg["from"], "bare")
+        and "@" in str(msg["from"].bare)
+    ):
+        room = msg["from"].bare
+
     if sub == "add":
-        if len(args) < 4:
+        if len(args) != 2:
             bot.reply(
                 msg,
-                "Usage: rss add <url> <period_seconds> <room1> [room2 ...]",
+                "Usage: rss add <url> (in a room or MUC DM only)",
+            )
+            return
+        if not room:
+            bot.reply(
+                msg,
+                "❌ RSS add can only be used in a room or MUC DM.",
             )
             return
         url = args[1]
-        try:
-            period = int(args[2])
-            if period < 10:
-                raise ValueError
-        except Exception:
-            bot.reply(
-                msg, "Invalid period (must be integer >= 10 seconds)."
-            )
-            return
-        rooms = args[3:]
-        try:
-            feed = await fetch_feed(url)
-            title = feed.feed.get("title", url)
-        except Exception:
-            bot.reply(msg, f"Failed to fetch or parse feed: {url}")
-            return
         feeds = await get_feeds(store)
-        feeds[url] = {
-            "title": title,
-            "period": period,
-            "rooms": rooms,
-            "last_id": None,
-        }
-        await save_feeds(store, feeds)
-        await ensure_task(bot, url, period, rooms)
-        bot.reply(
-            msg,
-            f"✅ Added feed: {title} ({url}) every {period}s to "
-            f"{', '.join(rooms)}",
-        )
+        if url not in feeds:
+            try:
+                feed = await fetch_feed(url)
+                title = feed.feed.get("title", url)
+            except Exception:
+                bot.reply(msg, f"Failed to fetch or parse feed: {url}")
+                return
+            feeds[url] = {
+                "title": title,
+                "period": 1200,
+                "rooms": [room],
+                "last_id": None,
+            }
+            await save_feeds(store, feeds)
+            await ensure_task(bot, url, 1200, [room])
+            bot.reply(
+                msg,
+                f"✅ Added feed: {title} ({url}) every 1200s to {room}",
+            )
+        else:
+            if room not in feeds[url]["rooms"]:
+                feeds[url]["rooms"].append(room)
+                await save_feeds(store, feeds)
+                await ensure_task(
+                    bot, url, feeds[url]["period"], feeds[url]["rooms"]
+                )
+                bot.reply(
+                    msg,
+                    f"✅ Added room {room} to feed: {feeds[url]['title']} ({url})",
+                )
+            else:
+                bot.reply(
+                    msg,
+                    f"ℹ️ Feed already added for this room: {url}",
+                )
+        return
+
     elif sub == "delete":
         if len(args) != 2:
             bot.reply(msg, "Usage: rss delete <url>")
+            return
+        if not room:
+            bot.reply(
+                msg,
+                "❌ RSS delete can only be used in a room or MUC DM.",
+            )
             return
         url = args[1]
         feeds = await get_feeds(store)
         if url not in feeds:
             bot.reply(msg, "Feed not found.")
             return
-        feeds.pop(url)
+        if room in feeds[url]["rooms"]:
+            feeds[url]["rooms"].remove(room)
+            if not feeds[url]["rooms"]:
+                # No rooms left, remove feed
+                feeds.pop(url)
+                if url in CHECK_TASKS:
+                    CHECK_TASKS[url].cancel()
+                    del CHECK_TASKS[url]
+                bot.reply(
+                    msg,
+                    f"🗑️ Deleted feed: {url} (no rooms left, feed removed)",
+                )
+            else:
+                await save_feeds(store, feeds)
+                await ensure_task(
+                    bot, url, feeds[url]["period"], feeds[url]["rooms"]
+                )
+                bot.reply(
+                    msg,
+                    f"🗑️ Removed this room from feed: {url}",
+                )
+        else:
+            bot.reply(
+                msg,
+                "ℹ️ This room was not subscribed to the feed.",
+            )
         await save_feeds(store, feeds)
-        if url in CHECK_TASKS:
-            CHECK_TASKS[url].cancel()
-            del CHECK_TASKS[url]
-        bot.reply(msg, f"🗑️ Deleted feed: {url}")
+        return
+
     elif sub == "list":
         feeds = await get_feeds(store)
         if not feeds:
