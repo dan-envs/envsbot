@@ -120,8 +120,8 @@ async def on_groupchat_message(bot, msg):
 
     for url in urls:
         try:
-            # Handle up to 3 redirects manually
-            final_url, status, ctype, title = await fetch_url_title(
+            # handle up to 3 redirects manually
+            final_url, status, ctype, title, content_size = await fetch_url_title(
                 url, max_redirects=3
             )
             if is_youtube_url(final_url):
@@ -139,9 +139,10 @@ async def on_groupchat_message(bot, msg):
                     mention=False, thread=False, ephemeral=True
                 )
             elif ctype:
+                size_str = f", {content_size} bytes" if content_size is not None else ""
                 bot.reply(
                     msg,
-                    f'[URL] ({ctype} {status}) ({final_url})',
+                    f'[URL] ({ctype} {status}{size_str}) ({final_url})',
                     mention=False, thread=False, ephemeral=True
                 )
         except Exception as e:
@@ -160,6 +161,12 @@ async def fetch_url_title(url, max_redirects=3):
             ) as resp:
                 status = resp.status
                 ctype = resp.headers.get("Content-Type", "")
+                content_size = None
+                if "Content-Length" in resp.headers:
+                    try:
+                        content_size = int(resp.headers["Content-Length"])
+                    except Exception:
+                        content_size = None
                 if (
                     status in (301, 302, 303, 307, 308)
                     and "Location" in resp.headers
@@ -170,11 +177,12 @@ async def fetch_url_title(url, max_redirects=3):
                     text = await resp.text(errors="replace")
                     title = extract_html_title(text)
                     return (
-                        resp.url.human_repr(), status, ctype, title
+                        resp.url.human_repr(), status, ctype, title, None
                     )
                 else:
                     return (
-                        resp.url.human_repr(), status, ctype, None
+                        resp.url.human_repr(), status, ctype,
+                        None, content_size
                     )
         raise Exception("Too many redirects")
 
