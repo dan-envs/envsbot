@@ -50,15 +50,13 @@ async def _get_target(bot, msg, is_room, nick, args):
         target_nick = args[0]
         info = nicks.get(target_nick)
         if not info or not info.get("jid"):
-            return None, f"❌ Nick '{target_nick}' not found in this room.",
-            None, None
+            return None, f"❌ Nick '{target_nick}' not found in this room.", None, None
         target_jid = str(info["jid"])
         display_name = target_nick
     else:
         info = nicks.get(nick)
         if not info or not info.get("jid"):
-            return None, "❌ Could not determine your JID in this room.",
-            None, None
+            return None, "❌ Could not determine your JID in this room.", None, None
         target_jid = str(info["jid"])
         display_name = nick
     profile_store = bot.db.users.profile()
