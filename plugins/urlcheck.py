@@ -153,6 +153,7 @@ async def on_groupchat_message(bot, msg):
                         ephemeral=False
                     )
                     continue
+            #log.info(f"[URLCHECK] ctype is: {ctype}")
             if ctype and ctype.startswith("text/html") and title:
                 bot.reply(
                     msg,
@@ -168,6 +169,7 @@ async def on_groupchat_message(bot, msg):
                     f"⚠️ URL not fetched: too many redirects for {url}",
                     mention=False, thread=True, ephemeral=False
                 )
+                log.info(f"[URLCHECK] Too many redirects for URL {url}")
             else:
                 log.warning(f"[URLCHECK] Failed to fetch URL {url}: {e}")
 
@@ -197,10 +199,18 @@ async def fetch_url_title(url, max_redirects=3):
                     url = resp.headers["Location"]
                     continue
                 if ctype.startswith("text/html"):
-                    # Only read the first 8KB of HTML
-                    raw = await resp.content.read(262144)
+                    log.info(f"[URLCHECK] Fetching: {url}")
+                    # Only read the full HTML if it's a github.com URL
+                    # (with strict prefix check)
+                    if (url.startswith("https://github.com/")
+                            or url.startswith("http://github.com/")):
+                        #log.info(f"[URLCHECK] Github: {content_size} bytes")
+                        raw = await resp.content.read()
+                    else:
+                        raw = await resp.content.read(128 * 1024)
                     try:
-                        text = raw.decode(resp.charset or "utf-8", errors="replace")
+                        text = raw.decode(resp.charset or "utf-8",
+                                          errors="replace")
                     except Exception:
                         text = raw.decode("utf-8", errors="replace")
                     title = extract_html_title(text)
@@ -219,6 +229,7 @@ def extract_html_title(html):
     m = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
     if m:
         return m.group(1).strip()
+    log.info("[URLCHECK] No title found in HTML")
     return None
 
 
