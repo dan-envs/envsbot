@@ -185,7 +185,7 @@ async def fetch_url_title(url, max_redirects=3):
                     continue
                 if ctype.startswith("text/html"):
                     # Only read the first 8KB of HTML
-                    raw = await resp.content.read(8192)
+                    raw = await resp.content.read(65536)
                     try:
                         text = raw.decode(resp.charset or "utf-8", errors="replace")
                     except Exception:
