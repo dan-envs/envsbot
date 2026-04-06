@@ -149,7 +149,14 @@ async def on_groupchat_message(bot, msg):
             elif ctype:
                 return
         except Exception as e:
-            log.warning(f"[URLCHECK] Failed to fetch URL {url}: {e}")
+            if str(e) == "Too many redirects":
+                bot.reply(
+                    msg,
+                    f"⚠️ URL not fetched: too many redirects for {url}",
+                    mention=False, thread=True, ephemeral=False
+                )
+            else:
+                log.warning(f"[URLCHECK] Failed to fetch URL {url}: {e}")
 
 
 def is_youtube_url(url):
@@ -177,7 +184,12 @@ async def fetch_url_title(url, max_redirects=3):
                     url = resp.headers["Location"]
                     continue
                 if ctype.startswith("text/html"):
-                    text = await resp.text(errors="replace")
+                    # Only read the first 8KB of HTML
+                    raw = await resp.content.read(8192)
+                    try:
+                        text = raw.decode(resp.charset or "utf-8", errors="replace")
+                    except Exception:
+                        text = raw.decode("utf-8", errors="replace")
                     title = extract_html_title(text)
                     return (
                         resp.url.human_repr(), status, ctype, title, None
