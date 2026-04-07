@@ -250,7 +250,7 @@ async def on_groupchat_message(bot, msg):
             if str(e) == "Too many redirects":
                 bot.reply(
                     msg,
-                    f"⚠️ URL not fetched: too many redirects for {url}",
+                    f"🟡️ URL not fetched: too many redirects for {url}",
                     mention=False, thread=True, ephemeral=False
                 )
                 log.info(f"[URLCHECK] Too many redirects for URL {url}")
