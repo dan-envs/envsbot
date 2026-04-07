@@ -174,16 +174,18 @@ async def on_groupchat_message(bot, msg):
                     if (not has_xep_0511 and
                             not has_xep_0392_link_metadata(msg)):
                         try:
-                            message["link_metadata"]["title"] = (
-                                html.unescape(title)
-                            )
+                            if title is not None:
+                                message["link_metadata"]["title"] = (
+                                    html.unescape(title)
+                                )
                             message["link_metadata"]["about"] = (
                                 f"Uploader: {uploader} - Length: {length_str}"
                                 f" - Views: {views}"
                             )
-                            message["link_metadata"]["description"] = (
-                                html.unescape(yt_info)
-                            )
+                            if yt_info is not None:
+                                message["link_metadata"]["description"] = (
+                                    html.unescape(yt_info)
+                                )
                             message["link_metadata"]["url"] = final_url
                         except Exception as e:
                             log.warning(
@@ -218,9 +220,10 @@ async def on_groupchat_message(bot, msg):
                     if (not has_xep_0511 and
                             not has_xep_0392_link_metadata(msg)):
                         try:
-                            message["link_metadata"]["title"] = (
-                                html.unescape(title)
-                            )
+                            if title is not None:
+                                message["link_metadata"]["title"] = (
+                                    html.unescape(title)
+                                )
                             message["link_metadata"]["url"] = final_url
                             message["link_metadata"]["about"] = (
                                 f"Status: {status} - Content-Type: {ctype}"
