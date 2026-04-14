@@ -1,1 +1,2 @@
 # plugins
+from . import idlerpg
