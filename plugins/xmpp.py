@@ -20,6 +20,7 @@ import time
 import socket
 import slixmpp
 import aiohttp
+import asyncio
 from utils.command import command, Role
 from plugins.rooms import JOINED_ROOMS
 
@@ -67,7 +68,7 @@ def _resolve_target(bot, args, msg, is_room, nick):
     return target, None
 
 
-@command("xmpp", "x", role=Role.USER)
+@command("xmpp help", role=Role.USER, aliases=["x help"])
 async def cmd_xmpp_help(bot, sender_jid, nick, args, msg, is_room):
     """
     Display help message with all available XMPP commands.
@@ -79,7 +80,7 @@ async def cmd_xmpp_help(bot, sender_jid, nick, args, msg, is_room):
     bot.reply(msg, HELP_TEXT)
 
 
-@command("xmpp version", "x version", role=Role.USER)
+@command("xmpp version", role=Role.USER, aliases=["x version"])
 async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
     """
     Show the software version of an XMPP entity (XEP-0092).
@@ -97,10 +98,36 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         result = await bot.plugin["xep_0092"].get_version(jid=target, timeout=8)
-        version_info = f"**{result['name']}** v{result['version']}"
-        if result.get('os'):
-            version_info += f" on {result['os']}"
-        bot.reply(msg, f"ℹ️  Version: {version_info}")
+
+        name = None
+        version = None
+        os_info = None
+
+        # result is a slixmpp.stanza.iq.Iq object
+        # The XML element is the <iq> element, we need to go into the <query>
+        if hasattr(result, 'xml'):
+            # Find the query element
+            for child in result.xml:
+                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                if tag == 'query':
+                    # Now search the sub-elements of the query
+                    for elem in child:
+                        elem_tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                        if elem_tag == 'name':
+                            name = elem.text
+                        elif elem_tag == 'version':
+                            version = elem.text
+                        elif elem_tag == 'os':
+                            os_info = elem.text
+
+        if name and version:
+            version_info = f"**{name}** v{version}"
+            if os_info:
+                version_info += f" on {os_info}"
+            bot.reply(msg, f"ℹ️  Version: {version_info}")
+        else:
+            bot.reply(msg, f"ℹ️  {target} does not provide version information via XEP-0092")
+
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Version request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
@@ -111,7 +138,7 @@ async def cmd_xmpp_version(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Error: {e}")
 
 
-@command("xmpp items", "x items", role=Role.USER)
+@command("xmpp items", role=Role.USER, aliases=["x items"])
 async def cmd_xmpp_items(bot, sender_jid, nick, args, msg, is_room):
     """
     List the service items of an XMPP entity (XEP-0030).
@@ -129,12 +156,25 @@ async def cmd_xmpp_items(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         items = await bot.plugin["xep_0030"].get_items(jid=target, timeout=8)
-        if not items['disco_items']['items']:
+        disco_items = items.get('disco_items', {})
+        items_list = disco_items.get('items', [])
+
+        if not items_list:
             bot.reply(msg, f"No items found for {target}")
             return
 
-        items_list = "\n".join([f"  • {item[0]} ({item[1]})" for item in items['disco_items']['items']])
-        bot.reply(msg, f"📋 Items for {target}:\n{items_list}")
+        # items_list is a list of tuples: (jid, name)
+        formatted_items = []
+        for item in items_list:
+            if isinstance(item, tuple) and len(item) >= 1:
+                jid = item[0]
+                name = item[1] if len(item) > 1 else jid
+                formatted_items.append(f"  • {jid} ({name})")
+            else:
+                formatted_items.append(f"  • {item}")
+
+        result = f"📋 Items for {target}:\n" + "\n".join(formatted_items)
+        bot.reply(msg, result)
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Items request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
@@ -145,7 +185,7 @@ async def cmd_xmpp_items(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Error: {e}")
 
 
-@command("xmpp contact", "x contact", role=Role.USER)
+@command("xmpp contact", role=Role.USER, aliases=["x contact"])
 async def cmd_xmpp_contact(bot, sender_jid, nick, args, msg, is_room):
     """
     Display contact information for an XMPP entity (XEP-0030).
@@ -163,20 +203,44 @@ async def cmd_xmpp_contact(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         info = await bot.plugin["xep_0030"].get_info(jid=target, timeout=8)
-        contact_info = []
+        disco_info = info.get('disco_info', {})
+        contact_info = {}
 
-        for form in info['disco_info']['form']:
-            if form['type'] == 'form':
-                for field in form['fields']:
-                    if field['var'] in ['abuse-addresses', 'admin-addresses', 'feedback-addresses', 'security-addresses', 'support-addresses']:
-                        values = field.get('value', [])
-                        if values:
-                            contact_info.append(f"  • {field['var']}: {', '.join(values)}")
+        # disco_info['form'] is a slixmpp.plugins.xep_0004.stanza.form.Form object
+        if 'form' in disco_info and disco_info['form']:
+            form = disco_info['form']
+
+            # Iterate over the FormField objects
+            for field in form:
+                field_var = field.get('var', '')
+
+                # Extract the values
+                values = field.get('value', [])
+                if not values:
+                    continue
+
+                # Recognize contact types
+                if 'admin' in field_var.lower():
+                    contact_info['Admin'] = values if isinstance(values, list) else [values]
+                elif 'abuse' in field_var.lower():
+                    contact_info['Abuse'] = values if isinstance(values, list) else [values]
+                elif 'security' in field_var.lower():
+                    contact_info['Security'] = values if isinstance(values, list) else [values]
+                elif 'feedback' in field_var.lower():
+                    contact_info['Feedback'] = values if isinstance(values, list) else [values]
+                elif 'support' in field_var.lower():
+                    contact_info['Support'] = values if isinstance(values, list) else [values]
 
         if contact_info:
-            bot.reply(msg, f"📧 Contact info for {target}:\n" + "\n".join(contact_info))
+            lines = []
+            for contact_type in ['Admin', 'Abuse', 'Security', 'Feedback', 'Support']:
+                if contact_type in contact_info:
+                    for addr in contact_info[contact_type]:
+                        lines.append(f"  • {contact_type}: {addr}")
+            bot.reply(msg, f"📧 Contact info for {target}:\n" + "\n".join(lines))
         else:
-            bot.reply(msg, f"No contact information found for {target}")
+            bot.reply(msg, f"ℹ️  {target} does not provide contact information via XEP-0030")
+
     except slixmpp.exceptions.IqTimeout:
         bot.reply(msg, f"🔴 Contact request to {target} timed out.")
     except slixmpp.exceptions.IqError as e:
@@ -187,7 +251,7 @@ async def cmd_xmpp_contact(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Error: {e}")
 
 
-@command("xmpp info", "x info", role=Role.USER)
+@command("xmpp info", role=Role.USER, aliases=["x info"])
 async def cmd_xmpp_info(bot, sender_jid, nick, args, msg, is_room):
     """
     List the identities and features of an XMPP entity (XEP-0030).
@@ -205,25 +269,38 @@ async def cmd_xmpp_info(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         info = await bot.plugin["xep_0030"].get_info(jid=target, timeout=8)
+        disco_info = info.get('disco_info', {})
 
         identities = []
-        for ident in info['disco_info']['identities']:
-            ident_str = ident['category']
-            if ident.get('type'):
-                ident_str += f"/{ident['type']}"
-            if ident.get('name'):
-                ident_str += f" ({ident['name']})"
-            identities.append(f"  • {ident_str}")
+        # disco_info['identities'] is a list of tuples: (category, type, name)
+        if 'identities' in disco_info:
+            for ident in disco_info['identities']:
+                if isinstance(ident, tuple) and len(ident) >= 2:
+                    category = ident[0]
+                    ident_type = ident[1]
+                    name = ident[2] if len(ident) > 2 else None
 
-        features = [f"  • {feature}" for feature in info['disco_info']['features']]
+                    ident_str = category
+                    if ident_type:
+                        ident_str += f"/{ident_type}"
+                    if name:
+                        ident_str += f" ({name})"
+                    identities.append(f"  • {ident_str}")
+
+        features = []
+        if 'features' in disco_info:
+            features = [f"  • {feature}" for feature in disco_info['features']]
 
         result = f"🔍 Info for {target}:\n"
         if identities:
             result += f"\n**Identities:**\n" + "\n".join(identities)
         if features:
-            result += f"\n**Features:**\n" + "\n".join(features[:10])  # Limit to 10 features
+            result += f"\n**Features:**\n" + "\n".join(features[:10])
             if len(features) > 10:
                 result += f"\n  ... and {len(features) - 10} more"
+
+        if not identities and not features:
+            result += "No identities or features found."
 
         bot.reply(msg, result)
     except slixmpp.exceptions.IqTimeout:
@@ -236,7 +313,7 @@ async def cmd_xmpp_info(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Error: {e}")
 
 
-@command("xmpp ping", "x ping", role=Role.USER)
+@command("xmpp ping", role=Role.USER, aliases=["x ping"])
 async def cmd_xmpp_ping(bot, sender_jid, nick, args, msg, is_room):
     """
     Ping an XMPP JID and report round-trip time (XEP-0199).
@@ -275,7 +352,7 @@ async def cmd_xmpp_ping(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Ping to {target} failed: {e}")
 
 
-@command("xmpp uptime", "x uptime", role=Role.USER)
+@command("xmpp uptime", role=Role.USER, aliases=["x uptime"])
 async def cmd_xmpp_uptime(bot, sender_jid, nick, args, msg, is_room):
     """
     Show the uptime of an XMPP entity (XEP-0012).
@@ -322,7 +399,7 @@ async def cmd_xmpp_uptime(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 Error: {e}")
 
 
-@command("xmpp srv", "x srv", role=Role.USER)
+@command("xmpp srv", role=Role.USER, aliases=["x srv"])
 async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
     """
     Perform DNS SRV lookups for XMPP services.
@@ -361,7 +438,7 @@ async def cmd_xmpp_srv(bot, sender_jid, nick, args, msg, is_room):
         bot.reply(msg, f"🔴 DNS lookup failed: {e}")
 
 
-@command("xmpp compliance", "x compliance", role=Role.USER)
+@command("xmpp compliance", role=Role.USER, aliases=["x compliance"])
 async def cmd_xmpp_compliance(bot, sender_jid, nick, args, msg, is_room):
     """
     Show the compliance score of a server from compliance.conversations.im.
@@ -380,16 +457,30 @@ async def cmd_xmpp_compliance(bot, sender_jid, nick, args, msg, is_room):
 
     try:
         async with aiohttp.ClientSession() as session:
-            url = f"https://compliance.conversations.im/api/v1/server/{domain}"
+            url = f"https://compliance.conversations.im/server/{domain}/"
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    score = data.get('compliance', {}).get('score', 'N/A')
-                    result_url = f"https://compliance.conversations.im/server/{domain}"
-                    bot.reply(msg, f"✅ Compliance score for {domain}: **{score}%**\nDetails: {result_url}")
+                    from bs4 import BeautifulSoup
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+
+                    # Find the score in the stat_result div
+                    score_elem = soup.find(class_='stat_result')
+                    if score_elem:
+                        score = score_elem.get_text(strip=True)
+                        result_url = f"https://compliance.conversations.im/server/{domain}/"
+                        bot.reply(msg, f"✅ Compliance score for {domain}: **{score}**\nDetails: {result_url}")
+                    else:
+                        bot.reply(msg, f"🔴 Could not extract compliance score for {domain}")
+
+                elif resp.status == 404:
+                    bot.reply(msg, f"🔴 Server '{domain}' not found in compliance database")
                 else:
-                    bot.reply(msg, f"🔴 Server not found in compliance database")
+                    bot.reply(msg, f"🔴 Compliance database returned status {resp.status}")
+
     except asyncio.TimeoutError:
         bot.reply(msg, f"🔴 Compliance request timed out.")
+    except aiohttp.ClientError as e:
+        bot.reply(msg, f"🔴 Network error: {e}")
     except Exception as e:
         bot.reply(msg, f"🔴 Error: {e}")
