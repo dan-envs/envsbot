@@ -80,7 +80,8 @@ async def on_muc_presence(bot, pres):
             "jid": jid_bare if jid is not None else str(pres["from"]),
             "affiliation":
                 affiliation if affiliation is not None else "unknown",
-            "role": role if role is not None else "unknown"
+            "role": role if role is not None else "unknown",
+            "name": nick,
         }
     if affiliation is not None:
         new_nick["affiliation"] = affiliation

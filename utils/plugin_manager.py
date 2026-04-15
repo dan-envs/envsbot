@@ -292,7 +292,7 @@ class PluginManager:
         """
         Load all available plugins.
         """
-        for plugin in self.discover():
+        for plugin in list(self.discover()):
             if plugin not in self.plugins:
                 try:
                     await self.load(plugin)
