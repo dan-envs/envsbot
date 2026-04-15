@@ -6,13 +6,17 @@ Keeps only the last 10 messages per room in memory.
 
 Commands:
     s/<pattern>/<replacement>/<flags> - Correct last message
+    s#<pattern>#<replacement>#<flags> - Alternative delimiter
     {prefix}sed <pattern> <replacement> [flags] - Alternative syntax
     {prefix}sed on/off - Enable/disable sed plugin in this room (moderator only)
 """
 import re
 import logging
+import signal
 from functools import partial
 from collections import deque, defaultdict
+from contextlib import contextmanager
+from types import FrameType
 from utils.command import command, Role
 from plugins.rooms import JOINED_ROOMS
 
@@ -27,12 +31,29 @@ PLUGIN_META = {
 }
 
 SED_KEY = "SED"
+REGEX_TIMEOUT = 0.5  # Max 0.5 seconds for regex substitution
 
 # Store only last 10 messages per room
 MESSAGE_CACHE = defaultdict(lambda: deque(maxlen=10))
 
 # Track processed messages to avoid duplicates
 PROCESSED_STANZAS = set()
+
+
+def raise_timeout(sig: signal.Signals, frame_type: FrameType) -> None:
+    """Signal handler for timeout."""
+    raise TimeoutError()
+
+
+@contextmanager
+def timeout(max_time: float = REGEX_TIMEOUT):
+    """Context manager for timeout protection."""
+    signal.signal(signal.SIGALRM, raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, max_time)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
 
 
 def get_stanza_id(msg):
@@ -95,8 +116,38 @@ def get_message_by_id(room, msg_id):
     return None
 
 
+def read_until_delimiter(raw_statement: str, delimiter: str, require: bool = True):
+    """
+    Read string until unescaped delimiter is found.
+    Handles escaped delimiters (\\/).
+    """
+    value = ""
+    while True:
+        try:
+            sep_index = raw_statement.index(delimiter)
+        except ValueError:
+            if require:
+                raise ValueError(f"Delimiter '{delimiter}' not found")
+            return raw_statement, value
+
+        if sep_index == 0:
+            return value, raw_statement[1:]
+        elif raw_statement[sep_index - 1] == "\\":
+            # Escaped delimiter, include it
+            value += raw_statement[:sep_index - 1] + delimiter
+            raw_statement = raw_statement[sep_index + 1:]
+        else:
+            # Unescaped delimiter found
+            value += raw_statement[:sep_index]
+            raw_statement = raw_statement[sep_index + 1:]
+            return value, raw_statement
+
+
 def parse_sed_command(text):
-    """Parse sed-like command: s/pattern/replacement/flags"""
+    """
+    Parse sed-like command: s/pattern/replacement/flags or s#pattern#replacement#flags
+    Returns (pattern, replacement, flags) or (None, None, None) on error
+    """
     if not text.startswith('s'):
         return None, None, None
 
@@ -104,21 +155,23 @@ def parse_sed_command(text):
         return None, None, None
 
     delimiter = text[1]
-    parts = text[2:].split(delimiter)
 
-    if len(parts) < 2:
+    # Only allow / or # as delimiters
+    if delimiter not in ('/', '#'):
         return None, None, None
 
-    pattern = parts[0]
-    replacement = parts[1]
-    flags_str = parts[2] if len(parts) > 2 else ""
-
-    return pattern, replacement, flags_str
+    try:
+        raw_statement = text[2:]
+        pattern, raw_statement = read_until_delimiter(raw_statement, delimiter)
+        replacement, flags_str = read_until_delimiter(raw_statement, delimiter, require=False)
+        return pattern, replacement, flags_str
+    except ValueError:
+        return None, None, None
 
 
 def apply_sed(original_text, pattern, replacement, flags_str):
     """
-    Apply sed substitution to text.
+    Apply sed substitution to text with timeout protection.
 
     Flags:
         i - case insensitive
@@ -147,12 +200,17 @@ def apply_sed(original_text, pattern, replacement, flags_str):
         if literal_mode:
             pattern = re.escape(pattern)
 
-        if global_replace:
-            new_text, num = re.subn(pattern, replacement, original_text, flags=re_flags)
-        else:
-            new_text, num = re.subn(pattern, replacement, original_text, count=1, flags=re_flags)
+        # Apply regex with timeout protection
+        with timeout():
+            if global_replace:
+                new_text, num = re.subn(pattern, replacement, original_text, flags=re_flags)
+            else:
+                new_text, num = re.subn(pattern, replacement, original_text, count=1, flags=re_flags)
 
         return new_text, num
+    except TimeoutError:
+        log.warning("[SED] Regex timeout - possible ReDoS attack: pattern=%s", pattern)
+        return None, -1  # -1 indicates timeout
     except re.error:
         return None, 0
 
@@ -167,7 +225,7 @@ def is_sed_command(body):
     lines = body.strip().split('\n')
     for line in lines:
         if not line.startswith('>'):
-            if line.startswith('s/') and len(line) > 2:
+            if line.startswith('s') and len(line) > 2 and line[1] in ('/', '#'):
                 return True
     return False
 
@@ -212,6 +270,11 @@ async def process_sed_correction(bot, nick, msg, is_room, pattern, replacement, 
         new_msg, num_replacements = apply_sed(last_msg, pattern, replacement, flags_str)
     except Exception as e:
         bot.reply(msg, f"❌ Error applying sed: {e}")
+        return
+
+    if num_replacements == -1:
+        # Timeout occurred
+        bot.reply(msg, "⏱️ Regex timeout - pattern took too long to process!")
         return
 
     if new_msg is None:
