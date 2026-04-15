@@ -6,28 +6,45 @@ import asyncio
 import logging
 from utils.config import config
 from plugins.rooms import JOINED_ROOMS
-from .character import get_player, save_players
+from .character import get_player, save_players, PLAYERS
+from .tools import room_msg
 
 IDLERPG_ROOM = config.get("idlerpg_room", None)
-IDLERPG_EXCLUSION_LIST = config.get("idlerpg_exclusion_list", [])
 TICK_INTERVAL = 60  # seconds
 
 log = logging.getLogger(__name__)
 
 
 async def idle_tick(bot):
-    # now = time.time()
-    if not IDLERPG_ROOM or IDLERPG_ROOM not in JOINED_ROOMS:
+    # Check if bot is in room
+    jids = {nick.get('jid'): nick.get("affiliation") for nick in JOINED_ROOMS[IDLERPG_ROOM]["nicks"].values()}
+    if (not IDLERPG_ROOM or IDLERPG_ROOM not in JOINED_ROOMS
+            or jids.get(bot.boundjid.bare, None) not in ["owner", "admin"]):
+        task = getattr(bot, "idlerpg_task", None)
+        if task:
+            task.cancel()
+            bot.idlerpg_task = None
+        log.warning(f"[IDLERPG] No valid room configured for idle RPG. Stopping plugin.")
         return
-    for jids in JOINED_ROOMS[IDLERPG_ROOM]:
-        char = await get_player(jids)
+    nicks = JOINED_ROOMS[IDLERPG_ROOM]["nicks"]
+    for nick in nicks:
+        if nicks[nick]['jid'] not in config.get("idlerpg_exclude_jids", []):
+            char = await get_player(bot, nicks[nick])
+            char["active"] = True
+    for char in PLAYERS.values():
+        if char["nick"]["name"] not in JOINED_ROOMS[IDLERPG_ROOM]["nicks"]:
+            char["active"] = False
+            char["location"] = char["home"]
+            room_msg(bot, [f"🔴 {char["nick"]["name"]} left the room.",
+                           (f" {char['name']}, the {char['race']} {char['class']}"
+                            " returns home and is inactive.")])
+
     log.info("[IDLERPG] Ticked!")
     await save_players()
 
 
 async def tick_loop(bot):
     while True:
-
         await idle_tick(bot)
         await asyncio.sleep(TICK_INTERVAL)
 

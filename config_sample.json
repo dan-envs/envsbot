@@ -15,6 +15,10 @@
   "_comment4": "The 'db' key holds the name of the database file. It will be stored in the bots main directory you cloned",
   "db": "bot.db",
 
+  "_comment10": "Information for the IdleRPG plugin",
+  "idlerpg_room": "idlerpg@muc.domain.tld",
+  "idlerpg_exclude_jids": [ "bluebot@domain.tld" ],
+
   "_comment6": "Your YouTube API key for getting Information about Videos with the urlcheck plugin",
   "youtube_api_key": "<your_youtube_api_key>",
 

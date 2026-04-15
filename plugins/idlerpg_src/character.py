@@ -7,12 +7,15 @@ import json
 import aiofiles
 import os
 import time
+import logging
 from utils.config import config
-from plugins.rooms import JOINED_ROOMS
-from .info import CLASS_INFO, RACE_INFO, ITEMS, SKILLS
+from .info import CLASS_INFO, RACE_INFO, ITEMS, SKILLS, GEAR
 from .names_lists import NAMES
 from . import world
 from .tools import room_msg
+
+# Setup logging
+log = logging.getLogger(__name__)
 
 IDLERPG_ROOM = config.get("idlerpg_room", None)
 PLAYERS_FILE = "idlerpg_players.json"
@@ -104,9 +107,9 @@ async def get_starting_location():
     towns = [loc for loc in world.WORLD.get(
         "locations", []) if "town" in loc.get("type", "")]
     if towns:
-        return random.choice(towns)["name"]
+        return random.choice(towns)
     # fallback
-    return "Wilderness"
+    return {"name": "Wilderness", "type": "wilderness", "level": 1}
 
 
 def can_use_shield(char_class, race):
@@ -206,7 +209,7 @@ def check_skill(char, skill_name, difficulty):
     return (total >= difficulty, roll, total, difficulty)
 
 
-async def generate_character(jid):
+async def generate_character(bot, nick):
     race = random.choice(RACES)
     # 40% chance to use favored class, otherwise random
     if random.random() < 0.4:
@@ -224,21 +227,38 @@ async def generate_character(jid):
     name = get_unique_name(race, gender)
     location = await get_starting_location()
 
-    # Weapon
-    weapons = usable_items_for_class(ITEMS["Weapons"], char_class)
-    weapon = random.choice(weapons) if weapons else None
+    # Weapon: pick a usable weapon dict from ITEMS["Weapons"]
+    weapons = [w for w in ITEMS["Weapons"] if w.get("type", w.get("name")) in CLASS_INFO[char_class].get("WEAPONS", []) or "simple" in CLASS_INFO[char_class].get("WEAPONS", []) or w.get("type") == "simple"]
+    if not weapons:
+        weapons = ITEMS["Weapons"]
+    weapon = random.choice(weapons)
+    # Armor: pick a usable armor dict from ITEMS["Armor"]
+    armors = [a for a in ITEMS["Armor"] if a.get("type") in CLASS_INFO[char_class].get("ARMOR", []) or "light" in CLASS_INFO[char_class].get("ARMOR", [])]
+    if not armors:
+        armors = ITEMS["Armor"]
+    armor = random.choice(armors)
+    # Shield: maybe equip a usable shield dict from ITEMS["Shields"]
+    shields = [s for s in ITEMS["Shields"] if any(allowed in s["name"] for allowed in CLASS_INFO[char_class].get("SHIELDS", []))]
+    shield = random.choice(shields) if shields and random.choice([True, False]) else {"name": "None"}
 
-    # Armor
-    armors = usable_items_for_class(ITEMS["Armor"], char_class)
-    armor = random.choice(armors) if armors else None
+    # Helmet, gloves, boots, rings, necklace: None by default, but slot is a dict if equipped
+    helmet = {"name": "None"}
+    gloves = {"name": "None"}
+    boots = {"name": "None"}
+    ring_right = {"name": "None"}
+    ring_left = {"name": "None"}
+    necklace = {"name": "None"}
 
-    # Shield (randomly decide to give if usable)
-    shields = can_use_shield(char_class, race)
-    shield = random.choice(shields) if shields and random.choice(
-        [True, False]) else None
+    # Equip bedroll and backpack from GEAR (as inventory, not worn)
+    bedroll = next((g for g in GEAR if g["name"] == "bedroll"), None)
+    backpack = next((g for g in GEAR if g["name"] == "backpack"), None)
+    inventory = []
+    if bedroll:
+        inventory.append(bedroll)
+    if backpack:
+        inventory.append(backpack)
 
-    # Calculate max_hp based on class hit die and CON modifier
-    # (first level: max)
+    # Calculate max_hp based on class hit die and CON modifier (first level: max)
     class_info = CLASS_INFO[char_class]
     hit_die = class_info.get("HIT_DIE", "d8")
     die_size = int(hit_die[1:])
@@ -248,29 +268,34 @@ async def generate_character(jid):
         max_hp = 1
 
     char = {
-        "jid": jid,
+        "recent_nick": nick,
+        "jid": nick.get("jid", None),
         "name": name,
         "gender": gender,
         "race": race,
         "class": char_class,
         "level": 1,
+        "next_level": XP_FOR_LEVEL[2],
         "xp": 0,
         "max_hp": max_hp,
         "hp": max_hp,
         "location": location,
-        "weapon": weapon["name"] if weapon else None,
-        "armor": armor["name"] if armor else None,
-        "shield": shield["name"] if shield else None,
-        "helmet": None,
-        "gloves": None,
-        "boots": None,
-        "rings": None,
-        "necklace": None,
+        "home": location,
+        "weapon": weapon,
+        "armor": armor,
+        "shield": shield,
+        "helmet": helmet,
+        "gloves": gloves,
+        "boots": boots,
+        "ring_left": ring_left,
+        "ring_right": ring_right,
+        "necklace": necklace,
         "gold": 100,
         "last_action": None,
         "idle_time": 0,
         "stats": stats,
         "saves": {},
+        "inventory": inventory,
     }
     # --- SKILLS ---
     int_mod = (char["stats"].get("INT", 10) - 10) // 2
@@ -283,7 +308,6 @@ async def generate_character(jid):
     distribute_skill_points(char, points)
     # --- END SKILLS ---
     update_dynamic_stats(char)
-    PLAYERS[jid] = char
     return char
 
 
@@ -301,13 +325,78 @@ def can_level_up(char):
 
 
 def calc_base_attack_bonus(char):
-    """Calculate BAB for the character's class and level."""
+    """
+    Calculate total attack bonus for the character's equipped weapon,
+    including class BAB and STR or DEX modifier as appropriate.
+    """
     class_info = CLASS_INFO[char["class"]]
     lvl = char["level"]
     base = class_info.get("BASE", [])
-    if lvl <= len(base):
-        return base[lvl-1][0]
-    return 0
+    bab = base[lvl-1][0] if lvl <= len(base) else 0
+
+    weapon_name = char.get("weapon")
+    weapon = None
+    if weapon_name:
+        for w in ITEMS["Weapons"]:
+            if w["name"].lower() == str(weapon_name).lower():
+                weapon = w
+                break
+
+    # Default to STR for melee, DEX for ranged, fallback to STR
+    if weapon and weapon.get("category") == "ranged":
+        ability = "DEX"
+    else:
+        ability = "STR"
+    ability_mod = (char["stats"].get(ability, 10) - 10) // 2
+
+    return bab + ability_mod
+
+
+def calc_damage(char):
+    """
+    Calculate the damage string for the character's equipped weapon,
+    including STR bonus (or 1.5x STR for two-handed melee), weapon bonus,
+    and "mighty" property for ranged weapons.
+    Returns a string like "2d6 + 4".
+    """
+    weapon = char.get("weapon")
+    # If weapon is a string, look up the dict
+    if isinstance(weapon, str):
+        weapon = next((w for w in ITEMS["Weapons"] if w["name"].lower() == weapon.lower()), None)
+
+    # Default weapon damage
+    damage_dice = "1d3"
+    weapon_bonus = 0
+    is_melee = True
+
+    if weapon:
+        damage_dice = weapon.get("damage", "1d3")
+        weapon_bonus = weapon.get("bonus", 0)
+        is_melee = weapon.get("category", "melee") != "ranged"
+
+    # Calculate STR modifier
+    str_mod = (char["stats"].get("STR", 10) - 10) // 2
+
+    # Two-handed melee weapons get 1.5x STR bonus (simplified: check for "two_handed" property)
+    if is_melee and weapon and weapon.get("two_handed", False):
+        str_bonus = int(str_mod * 1.5)
+    elif is_melee:
+        str_bonus = str_mod
+    else:
+        # Ranged weapons: add STR bonus only if "mighty" property is present
+        if weapon and weapon.get("mighty", False):
+            str_bonus = str_mod
+        else:
+            str_bonus = 0
+
+    total_bonus = str_bonus + weapon_bonus
+
+    if total_bonus > 0:
+        return f"{damage_dice} + {total_bonus}"
+    elif total_bonus < 0:
+        return f"{damage_dice} - {abs(total_bonus)}"
+    else:
+        return f"{damage_dice}"
 
 
 def calc_saves(char):
@@ -331,6 +420,7 @@ def calc_ac(char):
     """
     Calculate Armor Class (AC) according to d20 SRD 3.5 rules.
     AC = 10 + DEX mod + armor bonus + shield bonus + size mod + natural armor + deflection + misc + additional_ac
+    For armor, shield, helmet, gloves, boots, rings, and necklace, add their "bonus" field if present.
     """
     base_ac = 10
     dex_mod = (char["stats"].get("DEX", 10) - 10) // 2
@@ -340,7 +430,7 @@ def calc_ac(char):
     if char.get("armor"):
         for armor in ITEMS["Armor"]:
             if armor["name"].lower() == str(char["armor"]).lower():
-                armor_bonus = armor.get("AC", 0)
+                armor_bonus = armor.get("AC", 0) + armor.get("bonus", 0)
                 break
 
     # Shield bonus
@@ -348,39 +438,41 @@ def calc_ac(char):
     if char.get("shield"):
         for shield in ITEMS["Shields"]:
             if shield["name"].lower() == str(char["shield"]).lower():
-                shield_bonus = shield.get("AC", 0)
+                shield_bonus = shield.get("AC", 0) + shield.get("bonus", 0)
                 break
 
-    # Additional AC from Helmets, Gloves, Boots, Rings, Necklace
+    # Additional AC from Helmets, Gloves, Boots, Rings, Necklace (including their "bonus" field)
     additional_ac = 0
     if char.get("helmet"):
         for helmet in ITEMS.get("Helmets", []):
             if helmet["name"].lower() == str(char["helmet"]).lower():
-                additional_ac += helmet.get("AC", 0)
+                additional_ac += helmet.get("AC", 0) + helmet.get("bonus", 0)
                 break
     if char.get("gloves"):
         for gloves in ITEMS.get("Gloves", []):
             if gloves["name"].lower() == str(char["gloves"]).lower():
-                additional_ac += gloves.get("AC", 0)
+                additional_ac += gloves.get("AC", 0) + gloves.get("bonus", 0)
                 break
     if char.get("boots"):
         for boots in ITEMS.get("Boots", []):
             if boots["name"].lower() == str(char["boots"]).lower():
-                additional_ac += boots.get("AC", 0)
+                additional_ac += boots.get("AC", 0) + boots.get("bonus", 0)
                 break
-    if char.get("rings"):
-        for ring in ITEMS.get("Rings", []):
-            if ring["name"].lower() == str(char["rings"]).lower():
-                additional_ac += ring.get("AC", 0)
-                break
+    # Support up to two rings
+    for ring_slot in ["rings", "ring1", "ring2"]:
+        ring_name = char.get(ring_slot)
+        if ring_name:
+            for ring in ITEMS.get("Rings", []):
+                if ring["name"].lower() == str(ring_name).lower():
+                    additional_ac += ring.get("AC", 0) + ring.get("bonus", 0)
+                    break
     if char.get("necklace"):
         for necklace in ITEMS.get("Necklace", []):
             if necklace["name"].lower() == str(char["necklace"]).lower():
-                additional_ac += necklace.get("AC", 0)
+                additional_ac += necklace.get("AC", 0) + necklace.get("bonus", 0)
                 break
 
     # Size modifier
-    size_mod = 0
     size = RACE_INFO[char["race"]].get("SIZE", "Medium")
     size_mods = {"Fine": 8, "Diminutive": 4, "Tiny": 2, "Small": 1,
                  "Medium": 0, "Large": -1, "Huge": -2, "Gargantuan": -4, "Colossal": -8}
@@ -400,23 +492,60 @@ def calc_speed(char):
     return race_info.get("BASE_SPEED", 30)
 
 
+def calc_max_carry_weight(char):
+    """
+    Calculate the maximum weight a character can carry according to d20 SRD 3.5 rules.
+    Uses STR and size. Returns max weight in lbs.
+    """
+    # Table: https://www.d20srd.org/srd/carryingCapacity.htm
+    # Only STR 1-29 supported here
+    STR = char["stats"].get("STR", 10)
+    size = RACE_INFO[char["race"]].get("SIZE", "Medium")
+    # Carrying capacity for Medium
+    base_table = [
+        3, 6, 10, 13, 16, 20, 23, 26, 30, 33, 38, 43, 50, 58, 66, 76, 86, 100, 116, 133,
+        153, 173, 200, 233, 266, 306, 346, 400, 466
+    ]
+    if STR < 1:
+        STR = 1
+    if STR > 29:
+        STR = 29
+    base = base_table[STR - 1]
+    # Size multipliers
+    size_mult = {
+        "Fine": 0.125,
+        "Diminutive": 0.25,
+        "Tiny": 0.5,
+        "Small": 0.75,
+        "Medium": 1,
+        "Large": 2,
+        "Huge": 4,
+        "Gargantuan": 8,
+        "Colossal": 16,
+    }
+    mult = size_mult.get(size, 1)
+    return int(base * mult)
+
+
 def update_dynamic_stats(char):
     """Update all dynamic stats for a character."""
     char["ac"] = calc_ac(char)
     char["base_attack_bonus"] = calc_base_attack_bonus(char)
+    char["damage"] = calc_damage(char)
     saves = calc_saves(char)
     char.update(saves)
     char["speed"] = calc_speed(char)
+    char["carry_weight"] = calc_max_carry_weight(char)
 
 
 async def add_xp(char, amount):
     char["xp"] += amount
     if can_level_up(char):
-        level_up(char)
+        await level_up(char)
     return char['xp']
 
 
-def level_up(char):
+async def level_up(char):
     """
     Level up a character according to d20 SRD 3.5 rules.
     - Increase level by 1
@@ -426,13 +555,14 @@ def level_up(char):
     - Handle ability score increases at levels 4, 8, 12, 16, 20
     """
     if char["level"] >= 20:
+        char["next_level"] = 0
         return  # Max level
 
     char["level"] += 1
 
     # Hit Die roll (minimum 1)
     class_info = CLASS_INFO[char["class"]]
-    hit_die = class_info.get("HIT_DIE", "d8")
+    hit_die = class_info.get("HIT_DIE", "d3")
     die_size = int(hit_die[1:])
     con_mod = (char["stats"].get("CON", 10) - 10) // 2
     hp_gain = max(random.randint(1, die_size) + con_mod, 1)
@@ -489,7 +619,7 @@ def level_up(char):
     update_dynamic_stats(char)
 
     # XP handling: subtract required XP for this level, keep overflow
-    xp_needed = XP_FOR_LEVEL[char["level"]]
+    xp_needed = XP_FOR_LEVEL[char["level"] + 1]
     if char.get("xp", 0) >= xp_needed:
         char["xp"] -= xp_needed
     else:
@@ -500,28 +630,26 @@ def level_up(char):
         char["hp"] = char["max_hp"]
 
 
-async def create_character(jid):
-    char = await generate_character(jid)
-    nick = JOINED_ROOMS[IDLERPG_ROOM].get_nick(jid)
-    room_msg(
-        None,
-        f"'{char['name']}', the {char['race']} {char['class']} was created for {nick}.",
-        mention=False,
-    )
+async def create_character(bot, nick):
+    char = await generate_character(bot, nick)
+    jid = nick.get("jid", None)
+    if jid is None:
+        room_msg(bot, f"🔴 Can't create character for unknown nick '{nick}'.", mention=False)
+        log.warning(f"[IDLERPG] 🔴 Can't create character for unknown nick/JID: '{nick}/{jid}'")
+        return
+    room_msg(bot,
+             f"'👺 {char['name']}', the {char['race']} {char['class']} was created for {nick['name']}.",
+             mention=False)
+    log.info(f"[IDLERPG]✅ Character created for {nick} ({jid}): {char['name']}, the {char['race']} {char['class']}")
     char["last_action"] = time.time()
     PLAYERS[jid] = char
     await save_players()
     return char
 
 
-async def get_character(jid):
-    if jid not in PLAYERS:
-        return await generate_character(jid)
-    return PLAYERS[jid]
-
-
 async def on_load(bot):
     await load_players()
+    log.info(f"[IDLERPG]✅ Players loaded!")
     # Populate NAME_USAGE with actual character names in PLAYERS
     NAME_USAGE.clear()
     for char in PLAYERS.values():
@@ -550,7 +678,11 @@ async def load_players():
         PLAYERS = {}
 
 
-async def get_player(jid):
-    if jid not in PLAYERS:
-        return await create_character(jid)
-    return PLAYERS[jid]
+async def get_player(bot, nick):
+    if nick.get('jid') not in PLAYERS:
+        char = await create_character(bot, nick)
+        PLAYERS[nick.get('jid')] = char
+        char["nick"] = nick
+    else:
+        char = PLAYERS[nick.get('jid')]
+    return char

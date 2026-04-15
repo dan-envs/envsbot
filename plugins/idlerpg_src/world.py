@@ -84,5 +84,11 @@ async def load_world():
 
 
 async def on_load(bot):
-    await load_world()
-    log.info(f"[IDLERPG] World loaded: {WORLD.get('name')}")
+    global WORLD
+    if not WORLD:
+        await load_world()
+        log.info(f"[IDLERPG]✅ World loaded: {WORLD.get('name')}")
+    if not WORLD:
+        WORLD = await generate_world()
+        await save_world()
+        log.info(f"[IDLERPG]✅ World GENERATED: {WORLD.get('name')}")
