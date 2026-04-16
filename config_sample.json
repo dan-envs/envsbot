@@ -15,6 +15,8 @@
   "_comment4": "The 'db' key holds the name of the database file. It will be stored in the bots main directory you cloned",
   "db": "bot.db",
 
+  "reminder_max_age_days": 365,
+
   "_comment6": "Your YouTube API key for getting Information about Videos with the urlcheck plugin",
   "youtube_api_key": "<your_youtube_api_key>",
 
