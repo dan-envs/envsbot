@@ -5,8 +5,14 @@ Item names are themed to fit their type and rarity.
 
 import random
 from .names_lists import (
-    NAMES, HUMAN_TOWN_NAMES, ELVEN_TOWN_NAMES, DWARF_TOWN_NAMES,
-    DUNGEON_NAMES, MOUNTAIN_NAMES, FOREST_NAMES, ITEM_NAMES
+    NAMES,
+    HUMAN_TOWN_NAMES,
+    ELVEN_TOWN_NAMES,
+    DWARF_TOWN_NAMES,
+    DUNGEON_NAMES,
+    MOUNTAIN_NAMES,
+    FOREST_NAMES,
+    ITEM_NAMES,
 )
 
 # Track usage counts for uniqueness
@@ -68,7 +74,9 @@ def fetch_forest_name():
 
 def fetch_item_name(item_type, rarity):
     """
-    Generate a unique item name for the given type (e.g. 'staff', 'helmet') and rarity.
+    Generate a unique item name for the given type (e.g. 'staff', 'helmet')
+    and rarity.
+
     Example: 'uncommon Dawnbringer staff'
     """
     # Lowercase rarity for display

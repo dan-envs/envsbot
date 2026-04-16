@@ -18,7 +18,9 @@ def roll(dice_str, modifier):
     """
     m = re.match(r"^\s*(?:(\d+)?)[dD](\d+)\s*$", dice_str)
     if not m:
-        raise ValueError("Invalid dice string format, expected '<num>d<sides>' or 'd<sides>'")
+        raise ValueError(
+            "Invalid dice string format, expected '<num>d<sides>' or 'd<sides>'"
+        )
     num = int(m.group(1)) if m.group(1) else 1
     sides = int(m.group(2))
     if num < 1 or sides < 2:

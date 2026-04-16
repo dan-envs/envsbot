@@ -1,16 +1,17 @@
 """
 World generation and fantasy name creation for idleRPG.
 """
+
 import random
 import logging
 import json
 import os
 import aiofiles
 from .fantasy_names import (
-        fetch_town_name,
-        fetch_dungeon_name,
-        fetch_mountain_name,
-        fetch_forest_name,
+    fetch_town_name,
+    fetch_dungeon_name,
+    fetch_mountain_name,
+    fetch_forest_name,
 )
 
 WORLD_FILE = "idlerpg_world.json"
@@ -35,11 +36,10 @@ async def generate_world():
     towns = []
     for _ in range(num_towns):
         race = random.choice(["Human", "Elf", "Dwarf"])
-        towns.append({
-            "name": fetch_town_name(race),
-            "type": f"{race.lower()}_town",
-            "level": 1
-        })
+        towns.append(
+            {"name": fetch_town_name(race), "type": f"{
+                race.lower()}_town", "level": 1}
+        )
 
     features = []
     for _ in range(num_mountains):
@@ -63,7 +63,7 @@ async def generate_world():
     return {
         "name": fetch_town_name("Human") + " Realm",
         "locations": locations,
-        "created": True
+        "created": True,
     }
 
 
