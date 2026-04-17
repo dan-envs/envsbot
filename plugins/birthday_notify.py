@@ -49,12 +49,13 @@ _BIRTHDAY_CHECK_TASK = None
 GLOBAL_JID = "__GLOBAL__"
 
 
-def _parse_birthday(birthday_str: str) -> tuple | None:
+def _parse_birthday(birthday_str: str) -> dict | None:
     """
-    Parse birthday string (MM-DD or YYYY-MM-DD) into (month, day).
+    Parse birthday string (MM-DD or YYYY-MM-DD) into components.
 
     Returns:
-        (month, day) tuple or None if invalid
+        dict with keys: 'month', 'day', 'year' (year only if YYYY-MM-DD)
+        or None if invalid
     """
     if not birthday_str:
         return None
@@ -63,7 +64,9 @@ def _parse_birthday(birthday_str: str) -> tuple | None:
         if len(birthday_str) == 5:  # MM-DD
             month = int(birthday_str[0:2])
             day = int(birthday_str[3:5])
+            year = None
         elif len(birthday_str) == 10:  # YYYY-MM-DD
+            year = int(birthday_str[0:4])
             month = int(birthday_str[5:7])
             day = int(birthday_str[8:10])
         else:
@@ -71,7 +74,10 @@ def _parse_birthday(birthday_str: str) -> tuple | None:
 
         # Validate
         if 1 <= month <= 12 and 1 <= day <= 31:
-            return (month, day)
+            return {"month": month, "day": day, "year": year}
+        else:
+            return None
+
     except (ValueError, IndexError):
         pass
 
@@ -88,12 +94,36 @@ def _is_birthday_today(birthday_str: str) -> bool:
     Returns:
         True if today is the user's birthday
     """
-    birthday_tuple = _parse_birthday(birthday_str)
-    if not birthday_tuple:
+    birthday_data = _parse_birthday(birthday_str)
+    if not birthday_data:
         return False
 
     today = datetime.date.today()
-    return (today.month, today.day) == birthday_tuple
+    return (today.month, today.day) == (birthday_data["month"], birthday_data["day"])
+
+
+def _calculate_age(birthday_str: str) -> int | None:
+    """
+    Calculate age from birthday string (only if YYYY-MM-DD format).
+
+    Args:
+        birthday_str: Birthday string (MM-DD or YYYY-MM-DD)
+
+    Returns:
+        Age in years or None if birthday format doesn't include year
+    """
+    birthday_data = _parse_birthday(birthday_str)
+    if not birthday_data or not birthday_data.get("year"):
+        return None
+
+    today = datetime.date.today()
+    age = today.year - birthday_data["year"]
+
+    # Adjust if birthday hasn't occurred yet this year
+    if (today.month, today.day) < (birthday_data["month"], birthday_data["day"]):
+        age -= 1
+
+    return age
 
 
 async def _is_enabled_for_room(bot, room_jid: str) -> bool:
@@ -109,7 +139,7 @@ async def _is_enabled_for_room(bot, room_jid: str) -> bool:
     """
     try:
         store = bot.db.users.plugin("birthday_notify")
-        enabled_rooms = await store.get_global("ENABLED_ROOMS", default={})
+        enabled_rooms = await store.get_global("birthday_notify_enabled_rooms", default={})
         return enabled_rooms.get(str(room_jid), False) is True
     except Exception:
         return False
@@ -143,10 +173,16 @@ async def _check_user_birthday(bot, user_jid_str: str, nick: str, room_jid):
         if not _is_birthday_today(birthday):
             return
 
-        # Birthday! Send announcement
+        # Birthday! Build message with age if available
+        age = _calculate_age(birthday)
+        if age is not None:
+            msg_text = f"🎂 Happy Birthday {nick}! 🎉 You're turning {age} today!"
+        else:
+            msg_text = f"🎂 Happy Birthday {nick}! 🎉"
+
         msg = bot.make_message(
             mto=room_jid,
-            mbody=f"🎂 Happy Birthday {nick}! 🎉",
+            mbody=msg_text,
             mtype="groupchat"
         )
         msg.send()
@@ -161,6 +197,7 @@ async def _check_user_birthday(bot, user_jid_str: str, nick: str, room_jid):
         log.info(
             f"[BIRTHDAY] 🎂 Birthday announcement for {nick} "
             f"({user_jid_str}) in room {room_jid}"
+            + (f" (age {age})" if age else "")
         )
 
     except Exception as e:
@@ -285,7 +322,7 @@ async def birthday_notify_command(bot, sender_jid, nick, args, msg, is_room):
     subcmd = args[0]
     room_jid = str(msg['from'].bare)
     store = bot.db.users.plugin("birthday_notify")
-    key = "ENABLED_ROOMS"
+    key = "birthday_notify_enabled_rooms"
 
     if subcmd == "on":
         # Get current dict
