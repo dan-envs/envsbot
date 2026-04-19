@@ -576,3 +576,26 @@ async def on_load(bot):
         )
         return
     await restart_all_tasks(bot)
+
+
+async def on_unload(bot):
+    """
+    Clean up all RSS tasks on unload
+
+    Prevents task orphaning and memory leaks
+    """
+    log.info("[RSS] Cleaning up RSS feed tasks...")
+
+    # Cancel all active tasks
+    for url, task in list(CHECK_TASKS.items()):
+        try:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                log.debug(f"[RSS] Task for {url} cancelled")
+            CHECK_TASKS.pop(url, None)
+        except Exception as e:
+            log.exception(f"[RSS] Error cancelling task for {url}: {e}")
+
+    log.info("[RSS] ✅ All RSS tasks cleaned up")
